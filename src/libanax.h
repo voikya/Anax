@@ -54,6 +54,7 @@ typedef struct colorscheme colorscheme_t;
 int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile);
 void printGeotiffInfo(geotiffmap_t *map, TIFF *tiff);
 int setDefaultColors(geotiffmap_t *map, colorscheme_t **colorscheme, int isAbsolute);
+int loadColorScheme(geotiffmap_t *map, colorscheme_t **colorscheme, char *colorfile);
 int colorize(geotiffmap_t *map, colorscheme_t *colorscheme);
 int renderPNG(geotiffmap_t *map, char *outfile);
 //void updatePNGWriteStatus(png_structp png_ptr, png_uint32 row, int pass);

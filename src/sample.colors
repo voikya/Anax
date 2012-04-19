@@ -12,7 +12,7 @@ Relative
 
 # Fill in E(levation), R(ed), B(lue), and G(reen) in the table below. If elevation is absolute, specify E in meters; if relative, specify E as value between 0 and 1.
 # Specify RGB values using decimal representation; that is, numbers between 0 and 255.
-E	R	G	B
+#E	R	G	B
 0.0	000	000	255
 0.5	000	255	000
 1.0	255	000	000

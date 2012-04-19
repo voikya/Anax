@@ -9,6 +9,7 @@
 void usage() {
 	fprintf(stderr, "Usage: geotiff [-os] [SRC PATH]\n");
 	fprintf(stderr, "    Flags:\n");
+	fprintf(stderr, "    -c [FILEPATH]: Apply the color scheme in FILEPATH instead of the default color scheme\n");
 	fprintf(stderr, "    -o [FILEPATH]: Save the output file to FILEPATH\n");
 	fprintf(stderr, "    -s [SCALE]: Scale the output file by a factor of SCALE\n");
 }
@@ -16,16 +17,22 @@ void usage() {
 int main(int argc, char *argv[]) {
 	// Argument flags
 	int c;
+	int cflag = 0;
 	int oflag = 0;
 	int sflag = 0;
 	char *srcfile = NULL;
 	char *outfile = NULL;
+	char *colorfile = NULL;
 	double scale = 1.0;
 
 	int err;
 
-	while((c = getopt(argc, argv, "o:s:")) != -1) {
+	while((c = getopt(argc, argv, "c:o:s:")) != -1) {
 		switch(c) {
+			case 'c':
+				cflag = 1;
+				colorfile = optarg;
+				break;
 			case 'o':
 				oflag = 1;
 				outfile = optarg;
@@ -89,7 +96,11 @@ int main(int argc, char *argv[]) {
 
 	// Init color scheme
 	colorscheme_t *colorscheme;
-	setDefaultColors(map, &colorscheme, ANAX_RELATIVE_COLORS);
+	if(cflag) {
+		loadColorScheme(map, &colorscheme, colorfile);
+	} else {
+		setDefaultColors(map, &colorscheme, ANAX_RELATIVE_COLORS);
+	}
 	colorize(map, colorscheme);
 
 	// Close TIFF
