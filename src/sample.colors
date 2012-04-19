@@ -1,0 +1,18 @@
+# ANAX Vertical Scale Color File
+# Sample.Colors
+#
+#
+#
+
+# Scale Type: On the line below, enter either "Relative" or "Absolute".
+# An absolute scale pins different colors to specific elevations; for instance, if you want 500m to be represented by the color green (RGB 000 255 000).
+# A relative scale pins colors to relative positions between the minimum elevation on a map and the maximum. For example, if a map spans the range from 0m
+# to 500m, the color green could be set to 20%, which will then associate the color with 100m.
+Relative
+
+# Fill in E(levation), R(ed), B(lue), and G(reen) in the table below. If elevation is absolute, specify E in meters; if relative, specify E as value between 0 and 1.
+# Specify RGB values using decimal representation; that is, numbers between 0 and 255.
+E	R	G	B
+0.0	000	000	255
+0.5	000	255	000
+1.0	255	000	000
