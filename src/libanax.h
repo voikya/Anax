@@ -57,5 +57,6 @@ int setDefaultColors(geotiffmap_t *map, colorscheme_t **colorscheme, int isAbsol
 int colorize(geotiffmap_t *map, colorscheme_t *colorscheme);
 int renderPNG(geotiffmap_t *map, char *outfile);
 //void updatePNGWriteStatus(png_structp png_ptr, png_uint32 row, int pass);
+int scaleImage(geotiffmap_t **map, double scale);
 
 #endif

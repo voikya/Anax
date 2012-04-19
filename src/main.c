@@ -20,7 +20,7 @@ int main(int argc, char *argv[]) {
 	int sflag = 0;
 	char *srcfile = NULL;
 	char *outfile = NULL;
-	double scale;
+	double scale = 1.0;
 
 	int err;
 
@@ -29,12 +29,10 @@ int main(int argc, char *argv[]) {
 			case 'o':
 				oflag = 1;
 				outfile = optarg;
-				printf("Outfile set to: %s\n", outfile);
 				break;
 			case 's':
 				sflag = 1;
 				scale = atof(optarg);
-				printf("Scale set to: %f\n", scale);
 				break;
 			case ':':
 				fprintf(stderr, "Error: Flag is missing argument\n");
@@ -79,6 +77,15 @@ int main(int argc, char *argv[]) {
 	err = initMap(&map, srctiff, srcfile);
 	if(err)
 		exit(err);
+
+	// Scale
+	if(scale != 1.0) {
+		if(scale > 1.0) {
+			printf("Scale must be between 0 and 1.\n");
+		} else {
+			scaleImage(&map, scale);
+		}
+	}
 
 	// Init color scheme
 	colorscheme_t *colorscheme;

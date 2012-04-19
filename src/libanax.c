@@ -144,6 +144,82 @@ void printGeotiffInfo(geotiffmap_t *map, TIFF *tiff) {
 	printf("    Min Elevation: %lim\n", (long) map->min_elevation);
 }
 
+int scaleImage(geotiffmap_t **map, double scale) {
+	int err;
+
+	// Allocate a new map struct
+	geotiffmap_t *newmap = malloc(sizeof(geotiffmap_t));
+
+	// Calculate the new image size
+	newmap->height = (int)((double)(*map)->height * scale);
+	newmap->width = (int)((double)(*map)->width * scale);
+	
+	// Calculate the step size
+	// (i.e., how many old pixels one new pixel corresponds to; adjusted so as always to be odd)
+	double step_vert = (double)((*map)->height) / (double)(newmap->height);
+	double step_horiz = (double)((*map)->height) / (double)(newmap->height);
+	//int16_t step_vert = (*map)->height / newmap->height;
+	//int16_t step_horiz = (*map)->width / newmap->width;
+	//step_vert += (step_vert % 2 == 0) ? 1 : 0;
+	//step_horiz += (step_horiz % 2 == 0) ? 1 : 0;
+
+	// Allocate enough memory for the entire map struct
+	newmap->data = malloc((*map)->height * sizeof(point_t *));
+	for(int i = 0; i < (*map)->height; i++) {
+		newmap->data[i] = malloc((*map)->width * sizeof(point_t));
+		if(newmap->data[i] == NULL)
+			return ANAX_ERR_NO_MEMORY;
+	}
+
+	// Create a matrix ('box') that contains all of the old pixels corresponding to one new pixel
+	int16_t box[(int)step_vert][(int)step_horiz];
+
+	// Scale the image
+	for(int r = 0; r < newmap->height; r++) {
+		for(int c = 0; c < newmap->width; c++) {
+			memset(box, 0, step_vert * step_horiz * sizeof(int16_t));
+
+			// Set up the box
+			int16_t box_firstrow = (int)((r * step_vert) - ((step_vert - 1) / 2));
+			int16_t box_firstcol = (int)((c * step_horiz) - ((step_horiz - 1) / 2));
+			int16_t sum = 0;
+			int cellcount = 0;
+			for(int boxr = 0; boxr < (int)step_vert; boxr++) {
+				for(int boxc = 0; boxc < (int)step_horiz; boxc++) {
+					if((box_firstrow + boxr >= 0) && (box_firstcol + boxc >= 0) && (box_firstrow + boxr < (*map)->height) && (box_firstcol + boxc < (*map)->width)) {
+						box[boxr][boxc] = (*map)->data[box_firstrow + boxr][box_firstcol + boxc].elevation;
+						sum += box[boxr][boxc];
+						cellcount++;
+					} else {
+						box[boxr][boxc] = -9999;
+					}
+				}
+			}
+
+			// Average the elevation and save the value
+			newmap->data[r][c].elevation = sum / cellcount;
+		}
+	}
+
+	// Copy over metadata from the old map struct that has not changed
+	newmap->name = calloc(strlen((*map)->name) + 1, sizeof(char));
+	strncpy(newmap->name, (*map)->name, strlen((*map)->name));
+	newmap->max_elevation = (*map)->max_elevation;
+	newmap->min_elevation = (*map)->min_elevation;
+
+	// Free the old map struct and return the new one
+	for(int i = 0; i < (*map)->height; i++) {
+		free((*map)->data[i]);
+	}
+	free((*map)->data);
+	free((*map)->name);
+	free(*map);
+
+	*map = newmap;
+
+	return 0;
+}
+
 int renderPNG(geotiffmap_t *map, char *outfile) {
 	FILE *fp = fopen(outfile, "w");
 	png_structp png_ptr = NULL;
@@ -198,7 +274,7 @@ int renderPNG(geotiffmap_t *map, char *outfile) {
 	png_set_flush(png_ptr, 1);
 
 	// Write the PNG
-	int percent_interval = map->height / 100;
+	double percent_interval = (double)map->height / 100.0;
 	png_byte *row_pointer = calloc(map->width, 4 * (bit_depth / 8));
 	for(int i = 0; i < map->height; i++) {
 		int pos = 0;
@@ -212,8 +288,12 @@ int renderPNG(geotiffmap_t *map, char *outfile) {
 
 		png_write_row(png_ptr, row_pointer);
 
-		if(i % percent_interval == 0) {
-			printf("%i%%\n", i / percent_interval);
+		if((int)percent_interval > 0) {
+			if(i % (int)percent_interval == 0) {
+				printf("%i%%\n", (int)(i / percent_interval));
+			}
+		} else {
+			printf("%i%%\n", (i * 100) / (int)map->height);
 		}
 	}
 	png_write_end(png_ptr, NULL);
