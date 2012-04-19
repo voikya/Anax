@@ -8,6 +8,23 @@
 #include "globals.h"
 #include "libanax.h"
 
+/* DEBUGGING FUNCTIONS */
+
+void SHOW_DATA_AT_POINT(geotiffmap_t *map, int r, int c) {
+	printf("SHOWING DATA AT ROW %i, COL %i\n", r, c);
+	printf("Location: %i°%i'%i\"N, %i°%i'%i\"E\n", map->data[r][c].latitude.degree,
+	                                               map->data[r][c].latitude.minute,
+	                                               map->data[r][c].latitude.second,
+	                                               map->data[r][c].longitude.degree,
+	                                               map->data[r][c].longitude.minute,
+	                                               map->data[r][c].longitude.second);
+	printf("Elevation: %im\n", (int)map->data[r][c].elevation);
+	printf("Color: [R %i, G %i, B %i, A %f]\n", map->data[r][c].color.r, map->data[r][c].color.g, map->data[r][c].color.b, map->data[r][c].color.a);
+}
+
+/* END DEBUGGING FUNCTIONS */
+
+
 int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile) {
 	int err;
 

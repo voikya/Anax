@@ -22,7 +22,7 @@ typedef struct coordinate coord_t;
 
 struct point {
 	int16_t elevation;
-	coord_t lattitude;
+	coord_t latitude;
 	coord_t longitude;
 	rgb_t color;
 };
