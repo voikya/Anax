@@ -22,6 +22,13 @@ void SHOW_DATA_AT_POINT(geotiffmap_t *map, int r, int c) {
 	printf("Color: [R %i, G %i, B %i, A %f]\n", map->data[r][c].color.r, map->data[r][c].color.g, map->data[r][c].color.b, map->data[r][c].color.a);
 }
 
+void SHOW_COLOR_SCHEME(colorscheme_t *colors) {
+	printf("SHOWING COLOR SCHEME\n");
+	for(int i = 1; i <= colors->num_stops; i++) {
+		printf("#%i: %im = [R %i, G %i, B %i, A %f]\n", i, (int)colors->colors[i].elevation, colors->colors[i].color.r, colors->colors[i].color.g, colors->colors[i].color.b, colors->colors[i].color.a);
+	}
+}
+
 /* END DEBUGGING FUNCTIONS */
 
 
@@ -87,26 +94,29 @@ int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile) {
 }
 
 int setDefaultColors(geotiffmap_t *map, colorscheme_t **colorscheme, int isAbsolute) {
+	int16_t min = map->min_elevation;
+	int16_t max = map->max_elevation;
+	
 	*colorscheme = malloc(sizeof(colorscheme_t));
 	(*colorscheme)->isAbsolute = isAbsolute;
 	(*colorscheme)->num_stops = 2;
 	(*colorscheme)->colors = calloc(4, sizeof(colorstop_t));
-	(*colorscheme)->colors[0].elevation = 0;
+	(*colorscheme)->colors[0].elevation = min;
 	(*colorscheme)->colors[0].color.r = 0;
 	(*colorscheme)->colors[0].color.g = 0;
 	(*colorscheme)->colors[0].color.b = 0;
 	(*colorscheme)->colors[0].color.a = 1.0;
-	(*colorscheme)->colors[1].elevation = 0;
+	(*colorscheme)->colors[1].elevation = min;
 	(*colorscheme)->colors[1].color.r = 0;
 	(*colorscheme)->colors[1].color.g = 0;
 	(*colorscheme)->colors[1].color.b = 0;
 	(*colorscheme)->colors[1].color.a = 1.0;
-	(*colorscheme)->colors[2].elevation = 0;
+	(*colorscheme)->colors[2].elevation = max;
 	(*colorscheme)->colors[2].color.r = 255;
 	(*colorscheme)->colors[2].color.g = 255;
 	(*colorscheme)->colors[2].color.b = 255;
 	(*colorscheme)->colors[2].color.a = 1.0;
-	(*colorscheme)->colors[3].elevation = 0;
+	(*colorscheme)->colors[3].elevation = max;
 	(*colorscheme)->colors[3].color.r = 255;
 	(*colorscheme)->colors[3].color.g = 255;
 	(*colorscheme)->colors[3].color.b = 255;
@@ -172,7 +182,6 @@ int loadColorScheme(geotiffmap_t *map, colorscheme_t **colorscheme, char *colorf
 			double e;
 			int r, g, b;
 			int res = sscanf(buf, "%lf %i %i %i", &e, &r, &g, &b);
-			printf("Got line: %lf %i %i %i \(%s\)\n", e, r, g, b, buf);
 			if(res != 4)
 				return ANAX_ERR_INVALID_COLOR_FILE;
 			(*colorscheme)->num_stops++;
@@ -204,18 +213,6 @@ int loadColorScheme(geotiffmap_t *map, colorscheme_t **colorscheme, char *colorf
 }
 
 int colorize(geotiffmap_t *map, colorscheme_t *colorscheme) {
-	if(!colorscheme->isAbsolute) {
-		int16_t max = map->max_elevation;
-		int16_t min = map->min_elevation;
-		colorscheme->colors[0].elevation = min;
-		colorscheme->colors[1].elevation = min;
-		colorscheme->colors[colorscheme->num_stops].elevation = max;
-		colorscheme->colors[colorscheme->num_stops + 1].elevation = max;
-		for(int i = 2; i < colorscheme->num_stops; i++) {
-			colorscheme->colors[i].elevation = min + ((max - min) / (colorscheme->num_stops - 1));
-		}
-	}
-
 	for(int i = 0; i < map->height; i++) {
 		for(int j = 0; j < map->width; j++) {
 			int stop = 0;
