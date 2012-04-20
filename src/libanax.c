@@ -32,7 +32,7 @@ void SHOW_COLOR_SCHEME(colorscheme_t *colors) {
 /* END DEBUGGING FUNCTIONS */
 
 
-int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile) {
+int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile, int suppress_output) {
 	int err;
 
 	// Allocate main map struct
@@ -88,8 +88,8 @@ int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile) {
 
 	}
 
-
-	printGeotiffInfo(*map, tiff);
+	if(!suppress_output)
+		printGeotiffInfo(*map, tiff);
 	return 0;
 }
 
@@ -141,16 +141,13 @@ int loadColorScheme(geotiffmap_t *map, colorscheme_t **colorscheme, char *colorf
 	while((*colorscheme)->isAbsolute == -1) {
 		if(!fgets(buf, BUFSIZE, fp))
 			return ANAX_ERR_INVALID_COLOR_FILE;
-		printf("Read: %s", buf);
 		if(buf[0] == '#' || buf[0] == '\n' || buf[0] == ' ')
 			continue;
 
 		buf[8] = 0;
 		if(!strcmp(buf, "Absolute")) {
-			printf("It's absolute\n");
 			(*colorscheme)->isAbsolute = ANAX_ABSOLUTE_COLORS;
 		} else if(!strcmp(buf, "Relative")) {
-			printf("It's relative\n");
 			(*colorscheme)->isAbsolute = ANAX_RELATIVE_COLORS;
 		}
 	}
@@ -322,7 +319,7 @@ int scaleImage(geotiffmap_t **map, double scale) {
 	return 0;
 }
 
-int renderPNG(geotiffmap_t *map, char *outfile) {
+int renderPNG(geotiffmap_t *map, char *outfile, int suppress_output) {
 	FILE *fp = fopen(outfile, "w");
 	png_structp png_ptr = NULL;
 	png_infop info_ptr = NULL;
@@ -390,12 +387,14 @@ int renderPNG(geotiffmap_t *map, char *outfile) {
 
 		png_write_row(png_ptr, row_pointer);
 
-		if((int)percent_interval > 0) {
-			if(i % (int)percent_interval == 0) {
-				printf("%i%%\n", (int)(i / percent_interval));
+		if(!suppress_output) {
+			if((int)percent_interval > 0) {
+				if(i % (int)percent_interval == 0) {
+					printf("%i%%\n", (int)(i / percent_interval));
+				}
+			} else {
+				printf("%i%%\n", (i * 100) / (int)map->height);
 			}
-		} else {
-			printf("%i%%\n", (i * 100) / (int)map->height);
 		}
 	}
 	png_write_end(png_ptr, NULL);

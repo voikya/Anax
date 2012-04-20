@@ -5,12 +5,16 @@
 #include <unistd.h>
 #include "globals.h"
 #include "libanax.h"
+#include "distranax.h"
 
 void usage() {
-	fprintf(stderr, "Usage: geotiff [-os] [SRC PATH]\n");
+	fprintf(stderr, "Usage: geotiff [-cdloqs] [SRC PATH]\n");
 	fprintf(stderr, "    Flags:\n");
 	fprintf(stderr, "    -c [FILEPATH]: Apply the color scheme in FILEPATH instead of the default color scheme\n");
+    fprintf(stderr, "    -d [FILEPATH]: Run in distributed mode, with FILEPATH containing a list of addresses to other machines\n");
+    fprintf(stderr, "    -l : Run in listening mode, waiting for a connection from an instance running in distributed mode\n");
 	fprintf(stderr, "    -o [FILEPATH]: Save the output file to FILEPATH\n");
+	fprintf(stderr, "    -q : Suppress output to stdout\n");
 	fprintf(stderr, "    -s [SCALE]: Scale the output file by a factor of SCALE\n");
 }
 
@@ -18,24 +22,38 @@ int main(int argc, char *argv[]) {
 	// Argument flags
 	int c;
 	int cflag = 0;
+    int dflag = 0;
+	int lflag = 0;
 	int oflag = 0;
+	int qflag = 0;
 	int sflag = 0;
 	char *srcfile = NULL;
 	char *outfile = NULL;
 	char *colorfile = NULL;
+	char *addrfile = NULL;
 	double scale = 1.0;
 
 	int err;
 
-	while((c = getopt(argc, argv, "c:o:s:")) != -1) {
+	while((c = getopt(argc, argv, "c:d:lo:qs:")) != -1) {
 		switch(c) {
 			case 'c':
 				cflag = 1;
 				colorfile = optarg;
 				break;
+			case 'd':
+				dflag = 1;
+				addrfile = optarg;
+				break;
+			case 'l':
+				lflag = 1;
+				break;
 			case 'o':
 				oflag = 1;
 				outfile = optarg;
+				break;
+			case 'q':
+				qflag = 1;
 				break;
 			case 's':
 				sflag = 1;
@@ -69,7 +87,8 @@ int main(int argc, char *argv[]) {
 		getcwd(cwd, FILENAME_MAX);
 		outfile = calloc(FILENAME_MAX, sizeof(char));
 		sprintf(outfile, "%s%s", cwd, "/out.png");
-		printf("%s\n", outfile);
+		if(!qflag)
+			printf("%s\n", outfile);
 	}
 
 	// Open TIFF file
@@ -81,7 +100,7 @@ int main(int argc, char *argv[]) {
 
 	// Load data from GeoTIFF
 	geotiffmap_t *map;
-	err = initMap(&map, srctiff, srcfile);
+	err = initMap(&map, srctiff, srcfile, qflag);
 	if(err)
 		exit(err);
 
@@ -107,7 +126,7 @@ int main(int argc, char *argv[]) {
 	TIFFClose(srctiff);
 
 	// Render PNG
-	renderPNG(map, outfile);
+	renderPNG(map, outfile, qflag);
 
 	return 0;
 }
