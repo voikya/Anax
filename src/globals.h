@@ -7,11 +7,14 @@
 #define ANAX_ERR_TIFF_SCANLINE						-4
 #define ANAX_ERR_PNG_STRUCT_FAILURE					-5
 #define ANAX_ERR_INVALID_COLOR_FILE					-6
+#define ANAX_ERR_COULD_NOT_RESOLVE_ADDR				-7
+#define ANAX_ERR_COULD_NOT_CONNECT					-8
 
 #define ANAX_RELATIVE_COLORS						0
 #define ANAX_ABSOLUTE_COLORS						1
 
 #define BUFSIZE										1024
+#define REMOTE_PORT									"51777"
 
 #endif
 

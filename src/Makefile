@@ -1,4 +1,4 @@
-OBJ = main.o libanax.o
+OBJ = main.o libanax.o distranax.o
 DEP = $(OBJ:.o=.d)
 CC = gcc
 CFLAGS = -I/opt/local/include -L/opt/local/lib -std=c99 -g -Wall -MMD -MP

@@ -91,42 +91,53 @@ int main(int argc, char *argv[]) {
 			printf("%s\n", outfile);
 	}
 
-	// Open TIFF file
-	TIFF *srctiff = TIFFOpen(srcfile, "r");
-	if(srctiff == NULL) {
-		fprintf(stderr, "Error: No such file: %s\n", srcfile);
-		exit(ANAX_ERR_FILE_DOES_NOT_EXIST);
-	}
+	if(dflag) {
+		// Handle distributed rendering
 
-	// Load data from GeoTIFF
-	geotiffmap_t *map;
-	err = initMap(&map, srctiff, srcfile, qflag);
-	if(err)
-		exit(err);
+		// Load the destinations array
+		destinationlist_t *destinationlist;
+		err = loadDestinationList(addrfile, &destinationlist);
 
-	// Scale
-	if(scale != 1.0) {
-		if(scale > 1.0) {
-			printf("Scale must be between 0 and 1.\n");
-		} else {
-			scaleImage(&map, scale);
-		}
-	}
-
-	// Init color scheme
-	colorscheme_t *colorscheme;
-	if(cflag) {
-		loadColorScheme(map, &colorscheme, colorfile);
 	} else {
-		setDefaultColors(map, &colorscheme, ANAX_RELATIVE_COLORS);
+		// Handle local rendering
+
+		// Open TIFF file
+		TIFF *srctiff = TIFFOpen(srcfile, "r");
+		if(srctiff == NULL) {
+			fprintf(stderr, "Error: No such file: %s\n", srcfile);
+			exit(ANAX_ERR_FILE_DOES_NOT_EXIST);
+		}
+
+		// Load data from GeoTIFF
+		geotiffmap_t *map;
+		err = initMap(&map, srctiff, srcfile, qflag);
+		if(err)
+			exit(err);
+
+		// Scale
+		if(scale != 1.0) {
+			if(scale > 1.0) {
+				printf("Scale must be between 0 and 1.\n");
+			} else {
+				scaleImage(&map, scale);
+			}
+		}
+
+		// Init color scheme
+		colorscheme_t *colorscheme;
+		if(cflag) {
+			loadColorScheme(map, &colorscheme, colorfile);
+		} else {
+			setDefaultColors(map, &colorscheme, ANAX_RELATIVE_COLORS);
+		}
+		colorize(map, colorscheme);
+
+		// Close TIFF
+		TIFFClose(srctiff);
+
+		// Render PNG
+		renderPNG(map, outfile, qflag);
 	}
-	colorize(map, colorscheme);
-
-	// Close TIFF
-	TIFFClose(srctiff);
-
-	// Render PNG
-	renderPNG(map, outfile, qflag);
 
 	return 0;
 }
