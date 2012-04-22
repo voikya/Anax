@@ -27,7 +27,7 @@ int main(int argc, char *argv[]) {
 	int oflag = 0;
 	int qflag = 0;
 	int sflag = 0;
-	char *srcfile = NULL;
+	char *srcfile = calloc(FILENAME_MAX, sizeof(char));
 	char *outfile = NULL;
 	char *colorfile = NULL;
 	char *addrfile = NULL;
@@ -70,6 +70,22 @@ int main(int argc, char *argv[]) {
 				break;
 		}
 	}
+
+	joblist_t *joblist = malloc(sizeof(joblist_t));
+	joblist->num_jobs = 0;
+	for(int i = optind; i < argc; i++) {
+		joblist->num_jobs++;
+		joblist->jobs = realloc(joblist->jobs, joblist->num_jobs * sizeof(anaxjob_t));
+		joblist->jobs[joblist->num_jobs - 1].name = argv[i];
+		joblist->jobs[joblist->num_jobs - 1].status = 1; //ANAX_STATE_PENDING;
+	}
+	if(joblist->num_jobs == 0) {
+		fprintf(stderr, "Error: Source file(s) must be specified\n");
+		usage();
+		exit(ANAX_ERR_INVALID_INVOCATION);
+	}
+
+/*
 	for(int i = optind; i < argc; i++) {
 		if(srcfile != NULL) {
 			usage();
@@ -82,6 +98,8 @@ int main(int argc, char *argv[]) {
 		usage();
 		exit(ANAX_ERR_INVALID_INVOCATION);
 	}
+*/
+
 	if(outfile == NULL) {
 		char cwd[FILENAME_MAX];
 		getcwd(cwd, FILENAME_MAX);
@@ -99,44 +117,54 @@ int main(int argc, char *argv[]) {
 		err = loadDestinationList(addrfile, &destinationlist);
 
 	} else {
-		// Handle local rendering
+	    // Handle local rendering
+	    for(int i = 0; i < joblist->num_jobs; i++) {
 
-		// Open TIFF file
-		TIFF *srctiff = TIFFOpen(srcfile, "r");
-		if(srctiff == NULL) {
-			fprintf(stderr, "Error: No such file: %s\n", srcfile);
-			exit(ANAX_ERR_FILE_DOES_NOT_EXIST);
-		}
-
-		// Load data from GeoTIFF
-		geotiffmap_t *map;
-		err = initMap(&map, srctiff, srcfile, qflag);
-		if(err)
-			exit(err);
-
-		// Scale
-		if(scale != 1.0) {
-			if(scale > 1.0) {
-				printf("Scale must be between 0 and 1.\n");
-			} else {
-				scaleImage(&map, scale);
-			}
-		}
-
-		// Init color scheme
-		colorscheme_t *colorscheme;
-		if(cflag) {
-			loadColorScheme(map, &colorscheme, colorfile);
-		} else {
-			setDefaultColors(map, &colorscheme, ANAX_RELATIVE_COLORS);
-		}
-		colorize(map, colorscheme);
-
-		// Close TIFF
-		TIFFClose(srctiff);
-
-		// Render PNG
-		renderPNG(map, outfile, qflag);
+            ////// The following code is temporary
+            ////// Remove it once proper stitching is implemented
+            char cwd[FILENAME_MAX];
+            getcwd(cwd, FILENAME_MAX);
+            sprintf(outfile, "%s/out%i.png", cwd, i);
+            strcpy(srcfile, joblist->jobs[i].name);
+            ////// End temporary code
+    
+            // Open TIFF file
+            TIFF *srctiff = TIFFOpen(srcfile, "r");
+            if(srctiff == NULL) {
+                fprintf(stderr, "Error: No such file: %s\n", srcfile);
+                exit(ANAX_ERR_FILE_DOES_NOT_EXIST);
+            }
+    
+            // Load data from GeoTIFF
+            geotiffmap_t *map;
+            err = initMap(&map, srctiff, srcfile, qflag);
+            if(err)
+                exit(err);
+    
+            // Scale
+            if(scale != 1.0) {
+                if(scale > 1.0) {
+                    printf("Scale must be between 0 and 1.\n");
+                } else {
+                    scaleImage(&map, scale);
+                }
+            }
+    
+            // Init color scheme
+            colorscheme_t *colorscheme;
+            if(cflag) {
+                loadColorScheme(map, &colorscheme, colorfile);
+            } else {
+                setDefaultColors(map, &colorscheme, ANAX_RELATIVE_COLORS);
+            }
+            colorize(map, colorscheme);
+    
+            // Close TIFF
+            TIFFClose(srctiff);
+    
+            // Render PNG
+            renderPNG(map, outfile, qflag);
+        }
 	}
 
 	return 0;

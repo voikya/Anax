@@ -13,6 +13,12 @@
 #define ANAX_RELATIVE_COLORS						0
 #define ANAX_ABSOLUTE_COLORS						1
 
+#define ANAX_STATE_PENDING							1
+#define ANAX_STATE_INPROGRESS						2
+#define ANAX_STATE_COMPLETE							3
+#define ANAX_STATE_NOJOB							4
+#define ANAX_STATE_LOST								5
+
 #define BUFSIZE										1024
 #define REMOTE_PORT									"51777"
 

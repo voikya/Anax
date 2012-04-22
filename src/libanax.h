@@ -51,6 +51,18 @@ struct colorscheme {
 };
 typedef struct colorscheme colorscheme_t;
 
+struct anaxjob {
+	char *name;
+	int status;
+};
+typedef struct anaxjob anaxjob_t;
+
+struct joblist {
+	int num_jobs;
+	anaxjob_t *jobs;
+};
+typedef struct joblist joblist_t;
+
 int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile, int suppress_output);
 void printGeotiffInfo(geotiffmap_t *map, TIFF *tiff);
 int setDefaultColors(geotiffmap_t *map, colorscheme_t **colorscheme, int isAbsolute);
