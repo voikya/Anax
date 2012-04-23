@@ -77,7 +77,8 @@ int main(int argc, char *argv[]) {
 		joblist->num_jobs++;
 		joblist->jobs = realloc(joblist->jobs, joblist->num_jobs * sizeof(anaxjob_t));
 		joblist->jobs[joblist->num_jobs - 1].name = argv[i];
-		joblist->jobs[joblist->num_jobs - 1].status = 1; //ANAX_STATE_PENDING;
+		joblist->jobs[joblist->num_jobs - 1].status = ANAX_STATE_PENDING;
+		joblist->jobs[joblist->num_jobs - 1].thread = NULL;
 	}
 	if(joblist->num_jobs == 0) {
 		fprintf(stderr, "Error: Source file(s) must be specified\n");
@@ -115,6 +116,15 @@ int main(int argc, char *argv[]) {
 		// Load the destinations array
 		destinationlist_t *destinationlist;
 		err = loadDestinationList(addrfile, &destinationlist);
+		
+		// Initialize connections to each remote host
+		for(int i = 0; i < destinationlist->num_destinations; i++) {
+		    err = connectToRemoteHost(&(destinationlist->destinations[i]));
+		    destinationlist->destinations[i].status = ANAX_STATE_NOJOB;
+		}
+		
+		// Send out initial jobs
+		err = distributeJobs(destinationlist, joblist);
 
 	} else {
 	    // Handle local rendering

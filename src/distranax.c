@@ -92,8 +92,30 @@ int connectToRemoteHost(destination_t *dest) {
 	return 0;
 }
 
+int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist) {
+    for(int i = 0; i < destinationlist->num_destinations; i++) {
+        for(int j = 0; j < joblist->num_jobs; j++) {
+            if(joblist->jobs[j].status != ANAX_STATE_PENDING)
+                continue;
+            joblist->jobs[j].status = ANAX_STATE_INPROGRESS;
+            connectToRemoteHost(&(destinationlist->destinations[i]));
+            destinationlist->destinations[i].status = ANAX_STATE_INPROGRESS;
+            
+            threadarg_t *argt = malloc(sizeof(threadarg_t));
+            argt->dest = &(destinationlist->destinations[i]);
+            argt->job = &(joblist->jobs[j]);
+            pthread_create(&(joblist->jobs[j].thread), NULL, runRemoteJob, &argt);
+            free(argt);
+        }
+    }
+    
+    return 0;
+}
 
+void *runRemoteJob(void *argt) {
 
+    return NULL;
+}
 
 
 

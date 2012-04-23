@@ -1,6 +1,8 @@
 #ifndef GLOBALS_H
 #define GLOBALS_H
 
+#include <pthread.h>
+
 #define ANAX_ERR_INVALID_INVOCATION					-1
 #define ANAX_ERR_FILE_DOES_NOT_EXIST				-2
 #define ANAX_ERR_NO_MEMORY							-3
@@ -21,6 +23,32 @@
 
 #define BUFSIZE										1024
 #define REMOTE_PORT									"51777"
+
+struct destination {
+	char addr[128];
+	int socketfd;
+	int status;
+};
+typedef struct destination destination_t;
+
+struct destination_file {
+	int num_destinations;
+	destination_t *destinations;
+};
+typedef struct destination_file destinationlist_t;
+
+struct anaxjob {
+	char *name;
+	int status;
+	pthread_t thread;
+};
+typedef struct anaxjob anaxjob_t;
+
+struct joblist {
+	int num_jobs;
+	anaxjob_t *jobs;
+};
+typedef struct joblist joblist_t;
 
 #endif
 

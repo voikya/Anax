@@ -4,6 +4,7 @@
 #include <png.h>
 #include <stdint.h>
 #include <tiffio.h>
+#include "globals.h"
 
 struct color {
 	int r;
@@ -50,18 +51,6 @@ struct colorscheme {
 	colorstop_t *colors;
 };
 typedef struct colorscheme colorscheme_t;
-
-struct anaxjob {
-	char *name;
-	int status;
-};
-typedef struct anaxjob anaxjob_t;
-
-struct joblist {
-	int num_jobs;
-	anaxjob_t *jobs;
-};
-typedef struct joblist joblist_t;
 
 int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile, int suppress_output);
 void printGeotiffInfo(geotiffmap_t *map, TIFF *tiff);

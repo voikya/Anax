@@ -7,21 +7,19 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <pthread.h>
+#include "globals.h"
 
-struct destination {
-	char addr[128];
-	int socketfd;
+struct thread_arguments {
+    destination_t *dest;
+    anaxjob_t *job;
 };
-typedef struct destination destination_t;
-
-struct destination_file {
-	int num_destinations;
-	destination_t *destinations;
-};
-typedef struct destination_file destinationlist_t;
+typedef struct thread_arguments threadarg_t;
 
 void *get_in_addr(struct sockaddr *sa);
 int loadDestinationList(char *destfile, destinationlist_t **destinations);
 int connectToRemoteHost(destination_t *dest);
+int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist);
+void *runRemoteJob(void *argt);
 
 #endif
