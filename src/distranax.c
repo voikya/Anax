@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <curl/curl.h>
 #include "distranax.h"
 #include "globals.h"
 
@@ -92,7 +93,7 @@ int connectToRemoteHost(destination_t *dest) {
 	return 0;
 }
 
-int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist) {
+int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist, colorscheme_t *colorscheme) {
     for(int i = 0; i < destinationlist->num_destinations; i++) {
         for(int j = 0; j < joblist->num_jobs; j++) {
             if(joblist->jobs[j].status != ANAX_STATE_PENDING)
@@ -104,6 +105,7 @@ int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist) {
             threadarg_t *argt = malloc(sizeof(threadarg_t));
             argt->dest = &(destinationlist->destinations[i]);
             argt->job = &(joblist->jobs[j]);
+            argt->colorscheme = colorscheme;
             pthread_create(&(joblist->jobs[j].thread), NULL, runRemoteJob, &argt);
             free(argt);
         }
@@ -113,7 +115,48 @@ int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist) {
 }
 
 void *runRemoteJob(void *argt) {
-
+    destination_t *destination = ((threadarg_t *)argt)->dest;
+    anaxjob_t *job = ((threadarg_t *)argt)->job;
+    colorscheme_t *colorscheme = ((threadarg_t *)argt)->colorscheme;
+    
+    // Send data to remote machine for initial setup
+    // 2 - packet size
+    // 2 - str size
+    // 2 - num colors
+    // 1 - isAbs
+    // 1 - 000
+    // * - name
+    // * - colors (E: 2, R: 1, G: 1, B: 1, A: 8)
+    int num_bytes = 8 + strlen(job->name) + (colorscheme->num_stops * 13);
+    uint8_t *outbuf = calloc(num_bytes, sizeof(uint8_t));
+    struct header *hdr = (struct header *)outbuf;
+    hdr->packet_size = (uint16_t)num_bytes;
+    hdr->str_size = (uint16_t)strlen(job->name);
+    hdr->num_colors = (uint16_t)(colorscheme->num_stops);
+    hdr->is_abs = (uint8_t)(colorscheme->isAbsolute);
+    memcpy(outbuf + 8, job->name, strlen(job->name));
+    for(int i = 1; i <= colorscheme->num_stops; i++) {
+        struct compressed_color *comp_c = (struct compressed_color *)(outbuf + 8 + strlen(job->name) + ((i - 1) * 13));
+        comp_c->elevation = (int16_t)(colorscheme->colors[i].elevation);
+        comp_c->red = (uint8_t)(colorscheme->colors[i].color.r);
+        comp_c->green = (uint8_t)(colorscheme->colors[i].color.g);
+        comp_c->blue = (uint8_t)(colorscheme->colors[i].color.b);
+        comp_c->alpha = (double)(colorscheme->colors[i].color.a);
+    }
+    
+    int bytes_sent = 0;
+    while(bytes_sent < num_bytes) {
+        bytes_sent += send(destination->socketfd, outbuf + bytes_sent, num_bytes, 0);
+    }
+    
+    // Transmit the GeoTIFF, if necessary
+    
+    // Receive progress updates from remote machine
+    
+    // Receive output file from remote machine
+    
+    // Update local variables
+    
     return NULL;
 }
 

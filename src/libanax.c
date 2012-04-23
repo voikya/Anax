@@ -94,8 +94,8 @@ int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile, int suppress_output) 
 }
 
 int setDefaultColors(geotiffmap_t *map, colorscheme_t **colorscheme, int isAbsolute) {
-	int16_t min = map->min_elevation;
-	int16_t max = map->max_elevation;
+	int16_t min = (map == NULL) ? 0 : map->min_elevation;
+	int16_t max = (map == NULL) ? 0 : map->max_elevation;
 	
 	*colorscheme = malloc(sizeof(colorscheme_t));
 	(*colorscheme)->isAbsolute = isAbsolute;
@@ -171,8 +171,8 @@ int loadColorScheme(geotiffmap_t *map, colorscheme_t **colorscheme, char *colorf
 			(*colorscheme)->colors[(*colorscheme)->num_stops].color.a = 1.0;
 		}
 	} else if((*colorscheme)->isAbsolute == ANAX_RELATIVE_COLORS) {
-		int16_t min = map->min_elevation;
-		int16_t max = map->max_elevation;
+		int16_t min = (map == NULL) ? 0 : map->min_elevation;
+		int16_t max = (map == NULL) ? 0 : map->max_elevation;
 		while(fgets(buf, BUFSIZE, fp)) {
 			if(buf[0] == '#' || buf[0] == '\n' || buf[0] == ' ')
 				continue;

@@ -123,8 +123,16 @@ int main(int argc, char *argv[]) {
 		    destinationlist->destinations[i].status = ANAX_STATE_NOJOB;
 		}
 		
+		// Initialize color scheme
+        colorscheme_t *colorscheme;
+        if(cflag) {
+            loadColorScheme(NULL, &colorscheme, colorfile);
+        } else {
+            setDefaultColors(NULL, &colorscheme, ANAX_RELATIVE_COLORS);
+        }
+		
 		// Send out initial jobs
-		err = distributeJobs(destinationlist, joblist);
+		err = distributeJobs(destinationlist, joblist, colorscheme);
 
 	} else {
 	    // Handle local rendering
