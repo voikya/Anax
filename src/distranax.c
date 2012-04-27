@@ -156,7 +156,7 @@ void *runRemoteJob(void *argt) {
     
     // Update local variables
     
-    free(argt);
+    //free(argt);
     return NULL;
 }
 
@@ -192,21 +192,28 @@ int initRemoteListener(int *socketfd) {
 int getHeaderData(int outsocket, char **filename, colorscheme_t **colorscheme) {
     int bytes_rcvd = 0;
     uint16_t packet_size;
-
-        printf("Rcvd: %i, Packetsize: %i\n", bytes_rcvd, (int)packet_size);
     
     while(bytes_rcvd < sizeof(uint16_t)) {
         bytes_rcvd += recv(outsocket, &packet_size, sizeof(uint16_t), 0);
     }
-        printf("Rcvd: %i, Packetsize: %i\n", bytes_rcvd, (int)packet_size);
     
     uint8_t buf[packet_size - 2];
     
     while(bytes_rcvd < packet_size - 2) {
         bytes_rcvd += recv(outsocket, &buf, packet_size - bytes_rcvd, 0);
     }
+    uint16_t strlength = *(uint16_t *)buf;
+    uint16_t numcolors = *(uint16_t *)(buf + 2);
+    uint8_t isAbs = *(uint8_t *)(buf + 4);
+    *filename = calloc(strlength + 1, sizeof(char));
+    memcpy(*filename, buf + 6, strlength);
     
-    printf("Got header\n");
+    printf("Received %i bytes\n", bytes_rcvd);
+    printf("Packet size: %i\n", (int)packet_size);
+    printf("String length: %i\n", (int)strlength);
+    printf("Number of colors: %i\n", (int)numcolors);
+    printf("Is Absolute: %i\n", (int)isAbs);
+    printf("File: %s\n", *filename);
 
     return 0;
 }
