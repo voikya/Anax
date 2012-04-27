@@ -146,16 +146,23 @@ int main(int argc, char *argv[]) {
         int socketfd, outsocketfd;
         err = initRemoteListener(&socketfd);
         
-        // Receive loop for header data
-        while(1) {
-            struct sockaddr_in clientAddr;
-            socklen_t sinSize = sizeof(struct sockaddr_in);
-            outsocketfd = accept(socketfd, (struct sockaddr *)&clientAddr, &sinSize);
-           
-            char *filename;
-            colorscheme_t *colorscheme;
-            getHeaderData(outsocketfd, &filename, &colorscheme);
+        // Receive header data
+        struct sockaddr_in clientAddr;
+        socklen_t sinSize = sizeof(struct sockaddr_in);
+        outsocketfd = accept(socketfd, (struct sockaddr *)&clientAddr, &sinSize);
+        char *filename;
+        colorscheme_t *colorscheme;
+        getHeaderData(outsocketfd, &filename, &colorscheme);
+        
+        // Get image data
+        if(strstr(filename, "http://") == NULL) {
+            // Local file, must request transfer from originating node
+            getImageFromPrimary(outsocketfd, filename);
+        } else {
+            // Remote file, must be downloaded
+            downloadImage(filename);
         }
+
         
 	} else {
 	    // Handle local rendering

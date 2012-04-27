@@ -40,5 +40,7 @@ int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist, color
 void *runRemoteJob(void *argt);
 int initRemoteListener(int *socketfd);
 int getHeaderData(int outsocket, char **filename, colorscheme_t **colorscheme);
+int getImageFromPrimary(int outsocket, char *filename);
+int downloadImage(char *filename);
 
 #endif

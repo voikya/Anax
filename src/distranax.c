@@ -145,10 +145,35 @@ void *runRemoteJob(void *argt) {
     
     int bytes_sent = 0;
     while(bytes_sent < num_bytes) {
-        bytes_sent += send(destination->socketfd, outbuf + bytes_sent, num_bytes, 0);
+        bytes_sent += send(destination->socketfd, outbuf + bytes_sent, num_bytes - bytes_sent, 0);
     }
     
     // Transmit the GeoTIFF, if necessary
+    if(!strstr(job->name, "http://")) {
+        // Get the file size
+        FILE *fp = fopen(job->name, "r");
+        fseek(fp, 0L, SEEK_END);
+        num_bytes = ftell(fp);
+        rewind(fp);
+        
+        // Send the file size
+        bytes_sent = 0;
+        while(bytes_sent < sizeof(uint32_t)) {
+            bytes_sent += send(destination->socketfd, &num_bytes, 4, 0);
+        }
+        
+        // Send the file
+        bytes_sent = 0;
+        uint8_t buf[8192];
+        while(bytes_sent < num_bytes) {
+            int bytes_sent_tmp = 0;
+            int bytes_to_send = fread(buf, sizeof(uint8_t), 8192, fp);
+            while(bytes_sent_tmp < bytes_to_send) {
+                bytes_sent_tmp += send(destination->socketfd, buf, bytes_to_send - bytes_sent_tmp, 0);
+            }
+            bytes_sent += bytes_sent_tmp;
+        }
+    }
     
     // Receive progress updates from remote machine
     
@@ -235,7 +260,42 @@ int getHeaderData(int outsocket, char **filename, colorscheme_t **colorscheme) {
     return 0;
 }
 
+int getImageFromPrimary(int outsocket, char *filename) {
+    int bytes_rcvd = 0;
 
+    char *filename_without_path = strrchr(filename, '/');
+    filename_without_path = (filename_without_path == NULL) ? 0 : filename_without_path + 1;
+    char outfile[strlen(filename_without_path) + 6];
+    sprintf(outfile, "/tmp/%s", filename_without_path);
+    FILE *fp = fopen(outfile, "w+");
+    
+    uint32_t filesize = 0;
+    while(bytes_rcvd < 4) {
+        bytes_rcvd += recv(outsocket, &filesize, 4 - bytes_rcvd, 0);
+    }
+    printf("File size: %i\n", (int)filesize);
+
+    printf("Receiving image from primary node...");
+
+    uint8_t buf[8192]; // 8 kilobytes
+    bytes_rcvd = 0;
+    while(bytes_rcvd < filesize) {
+        int bytes_rcvd_tmp = recv(outsocket, buf, 8192, 0);
+        fwrite(buf, sizeof(uint8_t), bytes_rcvd_tmp, fp);
+        bytes_rcvd += bytes_rcvd_tmp;
+    }
+    
+    printf("  Done.\n");
+    
+    fclose(fp);
+    
+    return 0;
+}
+
+int downloadImage(char *filename) {
+    printf("Downloading image...\n");
+    return 0;
+}
 
 
 
