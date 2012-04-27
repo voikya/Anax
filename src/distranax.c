@@ -214,6 +214,23 @@ int getHeaderData(int outsocket, char **filename, colorscheme_t **colorscheme) {
     printf("Number of colors: %i\n", (int)numcolors);
     printf("Is Absolute: %i\n", (int)isAbs);
     printf("File: %s\n", *filename);
+    
+    *colorscheme = malloc(sizeof(colorscheme_t));
+    (*colorscheme)->isAbsolute = (int)isAbs;
+    (*colorscheme)->num_stops = (int)numcolors;
+    (*colorscheme)->colors = calloc(numcolors + 2, sizeof(colorstop_t));
+    
+    int coloroffset = 6 + strlength;
+    for(int i = 1; i <= numcolors; i++) {
+        (*colorscheme)->colors[i].elevation = *(uint16_t *)(buf + coloroffset);
+        (*colorscheme)->colors[i].color.r = *(uint8_t *)(buf + coloroffset + 2);
+        (*colorscheme)->colors[i].color.g = *(uint8_t *)(buf + coloroffset + 3);
+        (*colorscheme)->colors[i].color.b = *(uint8_t *)(buf + coloroffset + 4);
+        (*colorscheme)->colors[i].color.a = *(double *)(buf + coloroffset + 5);
+        coloroffset += 13;
+    }
+    memcpy(&((*colorscheme)->colors[0]), &((*colorscheme)->colors[1]), sizeof(colorstop_t));
+    memcpy(&((*colorscheme)->colors[numcolors + 1]), &((*colorscheme)->colors[numcolors]), sizeof(colorstop_t));
 
     return 0;
 }
