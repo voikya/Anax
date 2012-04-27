@@ -38,5 +38,7 @@ int loadDestinationList(char *destfile, destinationlist_t **destinations);
 int connectToRemoteHost(destination_t *dest);
 int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist, colorscheme_t *colorscheme);
 void *runRemoteJob(void *argt);
+int initRemoteListener(int *socketfd);
+int getHeaderData(int outsocket, char **filename, colorscheme_t **colorscheme);
 
 #endif

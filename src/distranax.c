@@ -99,18 +99,17 @@ int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist, color
             if(joblist->jobs[j].status != ANAX_STATE_PENDING)
                 continue;
             joblist->jobs[j].status = ANAX_STATE_INPROGRESS;
-            connectToRemoteHost(&(destinationlist->destinations[i]));
+            //connectToRemoteHost(&(destinationlist->destinations[i]));
             destinationlist->destinations[i].status = ANAX_STATE_INPROGRESS;
             
             threadarg_t *argt = malloc(sizeof(threadarg_t));
             argt->dest = &(destinationlist->destinations[i]);
             argt->job = &(joblist->jobs[j]);
             argt->colorscheme = colorscheme;
-            pthread_create(&(joblist->jobs[j].thread), NULL, runRemoteJob, &argt);
-            free(argt);
+            pthread_create(&(joblist->jobs[j].thread), NULL, runRemoteJob, argt);
         }
     }
-    
+        
     return 0;
 }
 
@@ -157,9 +156,60 @@ void *runRemoteJob(void *argt) {
     
     // Update local variables
     
+    free(argt);
     return NULL;
 }
 
+int initRemoteListener(int *socketfd) {
+    // Get socket
+    struct addrinfo hints, *res;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
+    
+    getaddrinfo(NULL, REMOTE_PORT, &hints, &res);
+    
+    for(struct addrinfo *a = res; a; a = a->ai_next) {
+        *socketfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+        if(*socketfd < 0)
+            continue;
+        if(bind(*socketfd, res->ai_addr, res->ai_addrlen) < 0) {
+            close(*socketfd);
+            return ANAX_ERR_COULD_NOT_CONNECT;
+        }
+        break;
+    }
+    
+    freeaddrinfo(res);
+    
+    // Listen
+    listen(*socketfd, 5);
+
+    return 0;
+}
+
+int getHeaderData(int outsocket, char **filename, colorscheme_t **colorscheme) {
+    int bytes_rcvd = 0;
+    uint16_t packet_size;
+
+        printf("Rcvd: %i, Packetsize: %i\n", bytes_rcvd, (int)packet_size);
+    
+    while(bytes_rcvd < sizeof(uint16_t)) {
+        bytes_rcvd += recv(outsocket, &packet_size, sizeof(uint16_t), 0);
+    }
+        printf("Rcvd: %i, Packetsize: %i\n", bytes_rcvd, (int)packet_size);
+    
+    uint8_t buf[packet_size - 2];
+    
+    while(bytes_rcvd < packet_size - 2) {
+        bytes_rcvd += recv(outsocket, &buf, packet_size - bytes_rcvd, 0);
+    }
+    
+    printf("Got header\n");
+
+    return 0;
+}
 
 
 

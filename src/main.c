@@ -80,7 +80,7 @@ int main(int argc, char *argv[]) {
 		joblist->jobs[joblist->num_jobs - 1].status = ANAX_STATE_PENDING;
 		joblist->jobs[joblist->num_jobs - 1].thread = NULL;
 	}
-	if(joblist->num_jobs == 0) {
+	if(joblist->num_jobs == 0 && !lflag) {
 		fprintf(stderr, "Error: Source file(s) must be specified\n");
 		usage();
 		exit(ANAX_ERR_INVALID_INVOCATION);
@@ -133,7 +133,30 @@ int main(int argc, char *argv[]) {
 		
 		// Send out initial jobs
 		err = distributeJobs(destinationlist, joblist, colorscheme);
-
+		
+		// Wait for all threads to terminate
+		for(int i = 0; i < joblist->num_jobs; i++) {
+		    pthread_join(joblist->jobs[i].thread, NULL);
+		}
+		
+    } else if(lflag) {
+        // Handle receipt of distributed rendering job
+        
+        // Network setup
+        int socketfd, outsocketfd;
+        err = initRemoteListener(&socketfd);
+        
+        // Receive loop for header data
+        while(1) {
+            struct sockaddr_in clientAddr;
+            socklen_t sinSize = sizeof(struct sockaddr_in);
+            outsocketfd = accept(socketfd, (struct sockaddr *)&clientAddr, &sinSize);
+           
+            char *filename;
+            colorscheme_t *colorscheme;
+            getHeaderData(outsocketfd, &filename, &colorscheme);
+        }
+        
 	} else {
 	    // Handle local rendering
 	    for(int i = 0; i < joblist->num_jobs; i++) {
