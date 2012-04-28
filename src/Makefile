@@ -2,7 +2,7 @@ OBJ = main.o libanax.o distranax.o
 DEP = $(OBJ:.o=.d)
 CC = gcc
 CFLAGS = -I/opt/local/include -L/opt/local/lib -std=c99 -g -Wall -MMD -MP
-LIB = -ltiff -lgeotiff -lpng
+LIB = -ltiff -lgeotiff -lpng -lcurl -lssl -lcrypto -lz
 BIN = anax
 
 all: $(BIN)

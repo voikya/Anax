@@ -293,7 +293,28 @@ int getImageFromPrimary(int outsocket, char *filename) {
 }
 
 int downloadImage(char *filename) {
-    printf("Downloading image...\n");
+    printf("Downloading image...");
+    
+    char *filename_without_path = strrchr(filename, '/');
+    filename_without_path = (filename_without_path == NULL) ? 0 : filename_without_path + 1;
+    char outfile[strlen(filename_without_path) + 6];
+    sprintf(outfile, "/tmp/%s", filename_without_path);
+    FILE *fp = fopen(outfile, "w+");
+    
+    CURL *curl;
+    CURLcode res;
+    curl = curl_easy_init();
+    if(curl) {
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
+        curl_easy_setopt(curl, CURLOPT_URL, filename);
+        res = curl_easy_perform(curl);
+        curl_easy_cleanup(curl);
+    }
+    
+    printf("  Done.\n");
+    
+    fclose(fp);
+    
     return 0;
 }
 
