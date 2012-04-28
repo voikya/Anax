@@ -77,6 +77,7 @@ int main(int argc, char *argv[]) {
 		joblist->num_jobs++;
 		joblist->jobs = realloc(joblist->jobs, joblist->num_jobs * sizeof(anaxjob_t));
 		joblist->jobs[joblist->num_jobs - 1].name = argv[i];
+		joblist->jobs[joblist->num_jobs - 1].index = i;
 		joblist->jobs[joblist->num_jobs - 1].status = ANAX_STATE_PENDING;
 		joblist->jobs[joblist->num_jobs - 1].thread = NULL;
 	}
@@ -130,9 +131,15 @@ int main(int argc, char *argv[]) {
         } else {
             setDefaultColors(NULL, &colorscheme, ANAX_RELATIVE_COLORS);
         }
+        
+        // Break if the color scheme is relative (this does not make sense when dealing with multiple files)
+		if(colorscheme->isAbsolute == ANAX_RELATIVE_COLORS) {
+		    fprintf(stderr, "Error: Distributed rendering is only possible with an absolute color scheme\n");
+		    exit(ANAX_ERR_INVALID_COLOR_FILE);
+		}
 		
 		// Send out initial jobs
-		err = distributeJobs(destinationlist, joblist, colorscheme);
+		err = distributeJobs(destinationlist, joblist, colorscheme, scale);
 		
 		// Wait for all threads to terminate
 		for(int i = 0; i < joblist->num_jobs; i++) {
@@ -152,7 +159,8 @@ int main(int argc, char *argv[]) {
         outsocketfd = accept(socketfd, (struct sockaddr *)&clientAddr, &sinSize);
         char *filename;
         colorscheme_t *colorscheme;
-        getHeaderData(outsocketfd, &filename, &colorscheme);
+        double scale;
+        getHeaderData(outsocketfd, &filename, &colorscheme, &scale);
         
         // Get image data
         if(strstr(filename, "http://") == NULL) {
@@ -163,6 +171,44 @@ int main(int argc, char *argv[]) {
             downloadImage(filename);
         }
 
+        // Open TIFF file
+        char *filename_without_path = strrchr(filename, '/');
+        filename_without_path = (filename_without_path == NULL) ? 0 : filename_without_path + 1;
+        char srcfile[strlen(filename_without_path) + 6];
+        sprintf(srcfile, "/tmp/%s", filename_without_path);
+        TIFF *srctiff = TIFFOpen(srcfile, "r");
+        if(srctiff == NULL) {
+            fprintf(stderr, "Error: No such file: %s\n", srcfile);
+            exit(ANAX_ERR_FILE_DOES_NOT_EXIST);
+        }
+        char outfile[strlen(srcfile) + 1];
+        strcpy(outfile, srcfile);
+        outfile[strlen(srcfile)] = 0;
+        outfile[strlen(srcfile) - 1] = 'g';
+        outfile[strlen(srcfile) - 2] = 'n';
+        outfile[strlen(srcfile) - 3] = 'p';
+
+        // Load data from GeoTIFF
+        geotiffmap_t *map;
+        err = initMap(&map, srctiff, srcfile, 0);
+        if(err)
+            exit(err);
+        
+        // Scale
+        if(scale != 1.0)
+            scaleImage(&map, scale);
+        
+        // Colorize
+        colorize(map, colorscheme);
+        
+        // Close TIFF
+        TIFFClose(srctiff);
+        
+        // Render PNG
+        renderPNG(map, outfile, 0);
+        
+        // Return PNG to primary node
+        returnPNG(outsocketfd, outfile);
         
 	} else {
 	    // Handle local rendering

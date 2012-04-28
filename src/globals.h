@@ -39,6 +39,7 @@ typedef struct destination_file destinationlist_t;
 
 struct anaxjob {
 	char *name;
+	int index;
 	int status;
 	pthread_t thread;
 };

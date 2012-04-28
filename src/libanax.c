@@ -126,85 +126,83 @@ int setDefaultColors(geotiffmap_t *map, colorscheme_t **colorscheme, int isAbsol
 }
 
 int loadColorScheme(geotiffmap_t *map, colorscheme_t **colorscheme, char *colorfile) {
-	FILE *fp = fopen(colorfile, "r");
-	if(!fp)
-		return ANAX_ERR_FILE_DOES_NOT_EXIST;
-	*colorscheme = malloc(sizeof(colorscheme_t));
-	if(!*colorscheme)
-		return ANAX_ERR_NO_MEMORY;
+    FILE *fp = fopen(colorfile, "r");
+    if(!fp)
+        return ANAX_ERR_FILE_DOES_NOT_EXIST;
+    *colorscheme = malloc(sizeof(colorscheme_t));
+    if(!*colorscheme)
+        return ANAX_ERR_NO_MEMORY;
 
-	(*colorscheme)->isAbsolute = -1;
-	(*colorscheme)->num_stops = 0;
-	(*colorscheme)->colors = NULL;
+    (*colorscheme)->isAbsolute = -1;
+    (*colorscheme)->num_stops = 0;
+    (*colorscheme)->colors = NULL;
 
-	char buf[BUFSIZE];
-	while((*colorscheme)->isAbsolute == -1) {
-		if(!fgets(buf, BUFSIZE, fp))
-			return ANAX_ERR_INVALID_COLOR_FILE;
-		if(buf[0] == '#' || buf[0] == '\n' || buf[0] == ' ')
-			continue;
+    char buf[BUFSIZE];
+    while((*colorscheme)->isAbsolute == -1) {
+        if(!fgets(buf, BUFSIZE, fp))
+            return ANAX_ERR_INVALID_COLOR_FILE;
+        if(buf[0] == '#' || buf[0] == '\n' || buf[0] == ' ')
+            continue;
 
-		buf[8] = 0;
-		if(!strcmp(buf, "Absolute")) {
-			(*colorscheme)->isAbsolute = ANAX_ABSOLUTE_COLORS;
-		} else if(!strcmp(buf, "Relative")) {
-			(*colorscheme)->isAbsolute = ANAX_RELATIVE_COLORS;
-		}
-	}
+        buf[8] = 0;
+        if(!strcmp(buf, "Absolute")) {
+            (*colorscheme)->isAbsolute = ANAX_ABSOLUTE_COLORS;
+        } else if(!strcmp(buf, "Relative")) {
+            (*colorscheme)->isAbsolute = ANAX_RELATIVE_COLORS;
+        }
+    }
 
-	if((*colorscheme)->isAbsolute == ANAX_ABSOLUTE_COLORS) {
-		while(fgets(buf, BUFSIZE, fp)) {
-			if(buf[0] == '#' || buf[0] == '\n' || buf[0] == ' ')
-				continue;
-			int e, r, g, b;
-			int res = sscanf(buf, "%i %i %i %i", &e, &r, &g, &b);
-			if(res != 4)
-				return ANAX_ERR_INVALID_COLOR_FILE;
-			(*colorscheme)->num_stops++;
-			(*colorscheme)->colors = realloc((*colorscheme)->colors, ((*colorscheme)->num_stops + 2) * sizeof(colorstop_t));
-			if(!(*colorscheme)->colors)
-				return ANAX_ERR_NO_MEMORY;
-			(*colorscheme)->colors[(*colorscheme)->num_stops].elevation = e;
-			(*colorscheme)->colors[(*colorscheme)->num_stops].color.r = r;
-			(*colorscheme)->colors[(*colorscheme)->num_stops].color.g = g;
-			(*colorscheme)->colors[(*colorscheme)->num_stops].color.b = b;
-			(*colorscheme)->colors[(*colorscheme)->num_stops].color.a = 1.0;
-		}
-	} else if((*colorscheme)->isAbsolute == ANAX_RELATIVE_COLORS) {
-		int16_t min = (map == NULL) ? 0 : map->min_elevation;
-		int16_t max = (map == NULL) ? 0 : map->max_elevation;
-		while(fgets(buf, BUFSIZE, fp)) {
-			if(buf[0] == '#' || buf[0] == '\n' || buf[0] == ' ')
-				continue;
-			double e;
-			int r, g, b;
-			int res = sscanf(buf, "%lf %i %i %i", &e, &r, &g, &b);
-			if(res != 4)
-				return ANAX_ERR_INVALID_COLOR_FILE;
-			(*colorscheme)->num_stops++;
-			(*colorscheme)->colors = realloc((*colorscheme)->colors, ((*colorscheme)->num_stops + 2) * sizeof(colorstop_t));
-			if(!(*colorscheme)->colors)
-				return ANAX_ERR_NO_MEMORY;
-			(*colorscheme)->colors[(*colorscheme)->num_stops].elevation = (int)(((max - min) * e) + min);
-			(*colorscheme)->colors[(*colorscheme)->num_stops].color.r = r;
-			(*colorscheme)->colors[(*colorscheme)->num_stops].color.g = g;
-			(*colorscheme)->colors[(*colorscheme)->num_stops].color.b = b;
-			(*colorscheme)->colors[(*colorscheme)->num_stops].color.a = 1.0;
-		}
-	}
+    if((*colorscheme)->isAbsolute == ANAX_ABSOLUTE_COLORS) {
+        while(fgets(buf, BUFSIZE, fp)) {
+            if(buf[0] == '#' || buf[0] == '\n' || buf[0] == ' ')
+                continue;
+            int e, r, g, b;
+            int res = sscanf(buf, "%i %i %i %i", &e, &r, &g, &b);
+            if(res != 4)
+                return ANAX_ERR_INVALID_COLOR_FILE;
+            (*colorscheme)->num_stops++;
+            (*colorscheme)->colors = realloc((*colorscheme)->colors, ((*colorscheme)->num_stops + 2) * sizeof(colorstop_t));
+            if(!(*colorscheme)->colors)
+                return ANAX_ERR_NO_MEMORY;
+            (*colorscheme)->colors[(*colorscheme)->num_stops].elevation = e;
+            (*colorscheme)->colors[(*colorscheme)->num_stops].color.r = r;
+            (*colorscheme)->colors[(*colorscheme)->num_stops].color.g = g;
+            (*colorscheme)->colors[(*colorscheme)->num_stops].color.b = b;
+            (*colorscheme)->colors[(*colorscheme)->num_stops].color.a = 1.0;
+        }
+    } else if((*colorscheme)->isAbsolute == ANAX_RELATIVE_COLORS) {
+        int16_t min = (map == NULL) ? 0 : map->min_elevation;
+        int16_t max = (map == NULL) ? 0 : map->max_elevation;
+        while(fgets(buf, BUFSIZE, fp)) {
+            if(buf[0] == '#' || buf[0] == '\n' || buf[0] == ' ')
+                continue;
+            double e;
+            int r, g, b;
+            int res = sscanf(buf, "%lf %i %i %i", &e, &r, &g, &b);
+            if(res != 4)
+                return ANAX_ERR_INVALID_COLOR_FILE;
+            (*colorscheme)->num_stops++;
+            (*colorscheme)->colors = realloc((*colorscheme)->colors, ((*colorscheme)->num_stops + 2) * sizeof(colorstop_t));
+            if(!(*colorscheme)->colors)
+                return ANAX_ERR_NO_MEMORY;
+            (*colorscheme)->colors[(*colorscheme)->num_stops].elevation = (int)(((max - min) * e) + min);
+            (*colorscheme)->colors[(*colorscheme)->num_stops].color.r = r;
+            (*colorscheme)->colors[(*colorscheme)->num_stops].color.g = g;
+            (*colorscheme)->colors[(*colorscheme)->num_stops].color.b = b;
+            (*colorscheme)->colors[(*colorscheme)->num_stops].color.a = 1.0;
+        }
+    }
 
-	(*colorscheme)->colors[0].elevation = (*colorscheme)->colors[1].elevation;
-	(*colorscheme)->colors[0].color.r = (*colorscheme)->colors[1].color.r;
-	(*colorscheme)->colors[0].color.g = (*colorscheme)->colors[1].color.g;
-	(*colorscheme)->colors[0].color.b = (*colorscheme)->colors[1].color.b;
-	(*colorscheme)->colors[0].color.a = (*colorscheme)->colors[1].color.a;
-	(*colorscheme)->colors[(*colorscheme)->num_stops + 1].elevation = (*colorscheme)->colors[(*colorscheme)->num_stops].elevation;
-	(*colorscheme)->colors[(*colorscheme)->num_stops + 1].color.r = (*colorscheme)->colors[(*colorscheme)->num_stops].color.r;
-	(*colorscheme)->colors[(*colorscheme)->num_stops + 1].color.g = (*colorscheme)->colors[(*colorscheme)->num_stops].color.g;
-	(*colorscheme)->colors[(*colorscheme)->num_stops + 1].color.b = (*colorscheme)->colors[(*colorscheme)->num_stops].color.b;
-	(*colorscheme)->colors[(*colorscheme)->num_stops + 1].color.a = (*colorscheme)->colors[(*colorscheme)->num_stops].color.a;
-
-
+    (*colorscheme)->colors[0].elevation = (*colorscheme)->colors[1].elevation;
+    (*colorscheme)->colors[0].color.r = (*colorscheme)->colors[1].color.r;
+    (*colorscheme)->colors[0].color.g = (*colorscheme)->colors[1].color.g;
+    (*colorscheme)->colors[0].color.b = (*colorscheme)->colors[1].color.b;
+    (*colorscheme)->colors[0].color.a = (*colorscheme)->colors[1].color.a;
+    (*colorscheme)->colors[(*colorscheme)->num_stops + 1].elevation = (*colorscheme)->colors[(*colorscheme)->num_stops].elevation;
+    (*colorscheme)->colors[(*colorscheme)->num_stops + 1].color.r = (*colorscheme)->colors[(*colorscheme)->num_stops].color.r;
+    (*colorscheme)->colors[(*colorscheme)->num_stops + 1].color.g = (*colorscheme)->colors[(*colorscheme)->num_stops].color.g;
+    (*colorscheme)->colors[(*colorscheme)->num_stops + 1].color.b = (*colorscheme)->colors[(*colorscheme)->num_stops].color.b;
+    (*colorscheme)->colors[(*colorscheme)->num_stops + 1].color.a = (*colorscheme)->colors[(*colorscheme)->num_stops].color.a;
 
 	return 0;
 }

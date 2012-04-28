@@ -93,7 +93,7 @@ int connectToRemoteHost(destination_t *dest) {
 	return 0;
 }
 
-int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist, colorscheme_t *colorscheme) {
+int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist, colorscheme_t *colorscheme, double scale) {
     for(int i = 0; i < destinationlist->num_destinations; i++) {
         for(int j = 0; j < joblist->num_jobs; j++) {
             if(joblist->jobs[j].status != ANAX_STATE_PENDING)
@@ -106,6 +106,7 @@ int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist, color
             argt->dest = &(destinationlist->destinations[i]);
             argt->job = &(joblist->jobs[j]);
             argt->colorscheme = colorscheme;
+            argt->scale = scale;
             pthread_create(&(joblist->jobs[j].thread), NULL, runRemoteJob, argt);
         }
     }
@@ -117,6 +118,7 @@ void *runRemoteJob(void *argt) {
     destination_t *destination = ((threadarg_t *)argt)->dest;
     anaxjob_t *job = ((threadarg_t *)argt)->job;
     colorscheme_t *colorscheme = ((threadarg_t *)argt)->colorscheme;
+    double scale = ((threadarg_t *)argt)->scale;
     
     // Send data to remote machine for initial setup
     // 2 - packet size
@@ -124,6 +126,7 @@ void *runRemoteJob(void *argt) {
     // 2 - num colors
     // 1 - isAbs
     // 1 - 000
+    // 8 - scale
     // * - name
     // * - colors (E: 2, R: 1, G: 1, B: 1, A: 8)
     int num_bytes = 8 + strlen(job->name) + (colorscheme->num_stops * 13);
@@ -133,9 +136,10 @@ void *runRemoteJob(void *argt) {
     hdr->str_size = (uint16_t)strlen(job->name);
     hdr->num_colors = (uint16_t)(colorscheme->num_stops);
     hdr->is_abs = (uint8_t)(colorscheme->isAbsolute);
-    memcpy(outbuf + 8, job->name, strlen(job->name));
+    hdr->scale = scale;
+    memcpy(outbuf + 16, job->name, strlen(job->name));
     for(int i = 1; i <= colorscheme->num_stops; i++) {
-        struct compressed_color *comp_c = (struct compressed_color *)(outbuf + 8 + strlen(job->name) + ((i - 1) * 13));
+        struct compressed_color *comp_c = (struct compressed_color *)(outbuf + 16 + strlen(job->name) + ((i - 1) * 13));
         comp_c->elevation = (int16_t)(colorscheme->colors[i].elevation);
         comp_c->red = (uint8_t)(colorscheme->colors[i].color.r);
         comp_c->green = (uint8_t)(colorscheme->colors[i].color.g);
@@ -178,7 +182,26 @@ void *runRemoteJob(void *argt) {
     // Receive progress updates from remote machine
     
     // Receive output file from remote machine
+    char outfile[FILENAME_MAX];
+    sprintf(outfile, "/tmp/map%i.png", job->index);
+    FILE *fp = fopen(outfile, "w+");
     
+    uint32_t filesize = 0;
+    int bytes_rcvd = 0;
+    while(bytes_rcvd < 4) {
+        bytes_rcvd += recv(destination->socketfd, &filesize, 4 - bytes_rcvd, 0);
+    }
+
+    uint8_t buf[8192]; // 8 kilobytes
+    bytes_rcvd = 0;
+    while(bytes_rcvd < filesize) {
+        int bytes_rcvd_tmp = recv(destination->socketfd, buf, 8192, 0);
+        fwrite(buf, sizeof(uint8_t), bytes_rcvd_tmp, fp);
+        bytes_rcvd += bytes_rcvd_tmp;
+    }
+    
+    fclose(fp);
+
     // Update local variables
     
     //free(argt);
@@ -214,7 +237,7 @@ int initRemoteListener(int *socketfd) {
     return 0;
 }
 
-int getHeaderData(int outsocket, char **filename, colorscheme_t **colorscheme) {
+int getHeaderData(int outsocket, char **filename, colorscheme_t **colorscheme, double *scale) {
     int bytes_rcvd = 0;
     uint16_t packet_size;
     
@@ -230,14 +253,16 @@ int getHeaderData(int outsocket, char **filename, colorscheme_t **colorscheme) {
     uint16_t strlength = *(uint16_t *)buf;
     uint16_t numcolors = *(uint16_t *)(buf + 2);
     uint8_t isAbs = *(uint8_t *)(buf + 4);
+    *scale = *(double *)(buf + 6);
     *filename = calloc(strlength + 1, sizeof(char));
-    memcpy(*filename, buf + 6, strlength);
+    memcpy(*filename, buf + 14, strlength);
     
     printf("Received %i bytes\n", bytes_rcvd);
     printf("Packet size: %i\n", (int)packet_size);
     printf("String length: %i\n", (int)strlength);
     printf("Number of colors: %i\n", (int)numcolors);
     printf("Is Absolute: %i\n", (int)isAbs);
+    printf("Scale: %f\n", *scale);
     printf("File: %s\n", *filename);
     
     *colorscheme = malloc(sizeof(colorscheme_t));
@@ -245,7 +270,7 @@ int getHeaderData(int outsocket, char **filename, colorscheme_t **colorscheme) {
     (*colorscheme)->num_stops = (int)numcolors;
     (*colorscheme)->colors = calloc(numcolors + 2, sizeof(colorstop_t));
     
-    int coloroffset = 6 + strlength;
+    int coloroffset = 14 + strlength;
     for(int i = 1; i <= numcolors; i++) {
         (*colorscheme)->colors[i].elevation = *(uint16_t *)(buf + coloroffset);
         (*colorscheme)->colors[i].color.r = *(uint8_t *)(buf + coloroffset + 2);
@@ -318,7 +343,35 @@ int downloadImage(char *filename) {
     return 0;
 }
 
-
+int returnPNG(int outsocket, char *filename) {
+    // Get the file size
+    FILE *fp = fopen(filename, "r");
+    fseek(fp, 0L, SEEK_END);
+    int num_bytes = ftell(fp);
+    rewind(fp);
+    
+    // Send the file size
+    int bytes_sent = 0;
+    while(bytes_sent < sizeof(uint32_t)) {
+        bytes_sent += send(outsocket, &num_bytes, 4, 0);
+    }
+    
+    // Send the file
+    bytes_sent = 0;
+    uint8_t buf[8192];
+    while(bytes_sent < num_bytes) {
+        int bytes_sent_tmp = 0;
+        int bytes_to_send = fread(buf, sizeof(uint8_t), 8192, fp);
+        while(bytes_sent_tmp < bytes_to_send) {
+            bytes_sent_tmp += send(outsocket, buf, bytes_to_send - bytes_sent_tmp, 0);
+        }
+        bytes_sent += bytes_sent_tmp;
+    }
+    
+    fclose(fp);
+    
+    return 0;
+}
 
 
 

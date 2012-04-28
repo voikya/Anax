@@ -15,6 +15,7 @@ struct thread_arguments {
     destination_t *dest;
     anaxjob_t *job;
     colorscheme_t *colorscheme;
+    double scale;
 };
 typedef struct thread_arguments threadarg_t;
 
@@ -23,6 +24,8 @@ struct header {
     uint16_t str_size;
     uint16_t num_colors;
     uint8_t is_abs;
+    uint8_t fill;
+    double scale;
 };
 
 struct compressed_color {
@@ -36,11 +39,12 @@ struct compressed_color {
 void *get_in_addr(struct sockaddr *sa);
 int loadDestinationList(char *destfile, destinationlist_t **destinations);
 int connectToRemoteHost(destination_t *dest);
-int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist, colorscheme_t *colorscheme);
+int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist, colorscheme_t *colorscheme, double scale);
 void *runRemoteJob(void *argt);
 int initRemoteListener(int *socketfd);
-int getHeaderData(int outsocket, char **filename, colorscheme_t **colorscheme);
+int getHeaderData(int outsocket, char **filename, colorscheme_t **colorscheme, double *scale);
 int getImageFromPrimary(int outsocket, char *filename);
 int downloadImage(char *filename);
+int returnPNG(int outsocket, char *filename);
 
 #endif
