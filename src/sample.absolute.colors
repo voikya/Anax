@@ -12,6 +12,8 @@ Absolute
 
 # Fill in E(levation), R(ed), B(lue), and G(reen) in the table below. If elevation is absolute, specify E in meters; if relative, specify E as value between 0 and 1.
 # Specify RGB values using decimal representation; that is, numbers between 0 and 255.
+# If using an absolute scale, any elevations below the minimum specified elevation or above the maximum specified elevation will appear black.
+
 #E	R	G	B
 -250	43	72	27
 0	77	106	60
@@ -25,4 +27,3 @@ Absolute
 2000	155	130	128
 2250	199	172	179
 2500	243	208	207
-

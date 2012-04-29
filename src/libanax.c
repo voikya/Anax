@@ -84,8 +84,6 @@ int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile, int suppress_output) 
 				(*map)->min_elevation = (*map)->data[row][col].elevation;
 			}
 		}
-
-
 	}
 
 	if(!suppress_output)
@@ -279,7 +277,7 @@ int scaleImage(geotiffmap_t **map, double scale) {
 			// Set up the box
 			int16_t box_firstrow = (int)((r * step_vert) - ((step_vert - 1) / 2));
 			int16_t box_firstcol = (int)((c * step_horiz) - ((step_horiz - 1) / 2));
-			int16_t sum = 0;
+			long int sum = 0;
 			int cellcount = 0;
 			for(int boxr = 0; boxr < (int)step_vert; boxr++) {
 				for(int boxc = 0; boxc < (int)step_horiz; boxc++) {

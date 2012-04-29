@@ -281,7 +281,6 @@ int getHeaderData(int outsocket, char **filename, colorscheme_t **colorscheme, d
     }
     memcpy(&((*colorscheme)->colors[0]), &((*colorscheme)->colors[1]), sizeof(colorstop_t));
     memcpy(&((*colorscheme)->colors[numcolors + 1]), &((*colorscheme)->colors[numcolors]), sizeof(colorstop_t));
-
     return 0;
 }
 
