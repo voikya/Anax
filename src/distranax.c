@@ -94,20 +94,24 @@ int connectToRemoteHost(destination_t *dest) {
 }
 
 int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist, colorscheme_t *colorscheme, double scale) {
+    printf("Distributing...\n");
     for(int i = 0; i < destinationlist->num_destinations; i++) {
-        for(int j = 0; j < joblist->num_jobs; j++) {
-            if(joblist->jobs[j].status != ANAX_STATE_PENDING)
-                continue;
-            joblist->jobs[j].status = ANAX_STATE_INPROGRESS;
-            //connectToRemoteHost(&(destinationlist->destinations[i]));
-            destinationlist->destinations[i].status = ANAX_STATE_INPROGRESS;
-            
-            threadarg_t *argt = malloc(sizeof(threadarg_t));
-            argt->dest = &(destinationlist->destinations[i]);
-            argt->job = &(joblist->jobs[j]);
-            argt->colorscheme = colorscheme;
-            argt->scale = scale;
-            pthread_create(&(joblist->jobs[j].thread), NULL, runRemoteJob, argt);
+        if(destinationlist->destinations[i].status == ANAX_STATE_NOJOB) {
+            for(int j = 0; j < joblist->num_jobs; j++) {
+                if(joblist->jobs[j].status != ANAX_STATE_PENDING)
+                    continue;
+                joblist->jobs[j].status = ANAX_STATE_INPROGRESS;
+                //connectToRemoteHost(&(destinationlist->destinations[i]));
+                destinationlist->destinations[i].status = ANAX_STATE_INPROGRESS;
+                
+                threadarg_t *argt = malloc(sizeof(threadarg_t));
+                argt->dest = &(destinationlist->destinations[i]);
+                argt->job = &(joblist->jobs[j]);
+                argt->colorscheme = colorscheme;
+                argt->scale = scale;
+                pthread_create(&(joblist->jobs[j].thread), NULL, runRemoteJob, argt);
+                break;
+            }
         }
     }
         
@@ -202,7 +206,12 @@ void *runRemoteJob(void *argt) {
     
     fclose(fp);
 
-    // Update local variables
+    // Update local variables and signal main thread
+    pthread_mutex_lock(&ready_mutex);
+    destination->status = ANAX_STATE_NOJOB;
+    job->status = ANAX_STATE_COMPLETE;
+    pthread_cond_signal(&ready_cond);
+    pthread_mutex_unlock(&ready_mutex);
     
     //free(argt);
     return NULL;
@@ -370,6 +379,16 @@ int returnPNG(int outsocket, char *filename) {
     fclose(fp);
     
     return 0;
+}
+
+int countComplete(joblist_t *joblist) {
+    int count = 0;
+    for(int i = 0; i < joblist->num_jobs; i++) {
+        if(joblist->jobs[i].status == ANAX_STATE_COMPLETE)
+            count++;
+    }
+    
+    return count;
 }
 
 

@@ -24,6 +24,9 @@
 #define BUFSIZE										1024
 #define REMOTE_PORT									"51777"
 
+pthread_mutex_t ready_mutex;
+pthread_cond_t ready_cond;
+
 struct destination {
 	char addr[128];
 	int socketfd;

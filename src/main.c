@@ -113,6 +113,10 @@ int main(int argc, char *argv[]) {
 
 	if(dflag) {
 		// Handle distributed rendering
+		
+		// Set up locks
+		pthread_mutex_init(&ready_mutex, NULL);
+		pthread_cond_init(&ready_cond, NULL);
 
 		// Load the destinations array
 		destinationlist_t *destinationlist;
@@ -141,6 +145,22 @@ int main(int argc, char *argv[]) {
 		// Send out initial jobs
 		err = distributeJobs(destinationlist, joblist, colorscheme, scale);
 		
+		// Send out later jobs as remote nodes free up
+		int completed = 0;
+		while(completed < joblist->num_jobs) {
+    		pthread_mutex_lock(&ready_mutex);
+	    	while(countComplete(joblist) == completed) {
+		        pthread_cond_wait(&ready_cond, &ready_mutex);
+		    }
+		    completed = countComplete(joblist);
+		    pthread_mutex_unlock(&ready_mutex);
+		    
+		    err = distributeJobs(destinationlist, joblist, colorscheme, scale);
+		}
+		
+		pthread_mutex_destroy(&ready_mutex);
+		pthread_cond_destroy(&ready_cond);
+		
 		// Wait for all threads to terminate
 		for(int i = 0; i < joblist->num_jobs; i++) {
 		    pthread_join(joblist->jobs[i].thread, NULL);
@@ -157,59 +177,61 @@ int main(int argc, char *argv[]) {
         struct sockaddr_in clientAddr;
         socklen_t sinSize = sizeof(struct sockaddr_in);
         outsocketfd = accept(socketfd, (struct sockaddr *)&clientAddr, &sinSize);
-        char *filename;
-        colorscheme_t *colorscheme;
-        double scale;
-        getHeaderData(outsocketfd, &filename, &colorscheme, &scale);
         
-        // Get image data
-        if(strstr(filename, "http://") == NULL) {
-            // Local file, must request transfer from originating node
-            getImageFromPrimary(outsocketfd, filename);
-        } else {
-            // Remote file, must be downloaded
-            downloadImage(filename);
-        }
-
-        // Open TIFF file
-        char *filename_without_path = strrchr(filename, '/');
-        filename_without_path = (filename_without_path == NULL) ? 0 : filename_without_path + 1;
-        char srcfile[strlen(filename_without_path) + 6];
-        sprintf(srcfile, "/tmp/%s", filename_without_path);
-        TIFF *srctiff = TIFFOpen(srcfile, "r");
-        if(srctiff == NULL) {
-            fprintf(stderr, "Error: No such file: %s\n", srcfile);
-            exit(ANAX_ERR_FILE_DOES_NOT_EXIST);
-        }
-        char outfile[strlen(srcfile) + 1];
-        strcpy(outfile, srcfile);
-        outfile[strlen(srcfile)] = 0;
-        outfile[strlen(srcfile) - 1] = 'g';
-        outfile[strlen(srcfile) - 2] = 'n';
-        outfile[strlen(srcfile) - 3] = 'p';
-
-        // Load data from GeoTIFF
-        geotiffmap_t *map;
-        err = initMap(&map, srctiff, srcfile, 0);
-        if(err)
-            exit(err);
-        
-        // Scale
-        if(scale != 1.0)
-            scaleImage(&map, scale);
-        
-        // Colorize
-        colorize(map, colorscheme);
-        
-        // Close TIFF
-        TIFFClose(srctiff);
-        
-        // Render PNG
-        renderPNG(map, outfile, 0);
-        
-        // Return PNG to primary node
-        returnPNG(outsocketfd, outfile);
-        
+        while(1) {
+            char *filename;
+            colorscheme_t *colorscheme;
+            double scale;
+            getHeaderData(outsocketfd, &filename, &colorscheme, &scale);
+            
+            // Get image data
+            if(strstr(filename, "http://") == NULL) {
+                // Local file, must request transfer from originating node
+                getImageFromPrimary(outsocketfd, filename);
+            } else {
+                // Remote file, must be downloaded
+                downloadImage(filename);
+            }
+    
+            // Open TIFF file
+            char *filename_without_path = strrchr(filename, '/');
+            filename_without_path = (filename_without_path == NULL) ? 0 : filename_without_path + 1;
+            char srcfile[strlen(filename_without_path) + 6];
+            sprintf(srcfile, "/tmp/%s", filename_without_path);
+            TIFF *srctiff = TIFFOpen(srcfile, "r");
+            if(srctiff == NULL) {
+                fprintf(stderr, "Error: No such file: %s\n", srcfile);
+                exit(ANAX_ERR_FILE_DOES_NOT_EXIST);
+            }
+            char outfile[strlen(srcfile) + 1];
+            strcpy(outfile, srcfile);
+            outfile[strlen(srcfile)] = 0;
+            outfile[strlen(srcfile) - 1] = 'g';
+            outfile[strlen(srcfile) - 2] = 'n';
+            outfile[strlen(srcfile) - 3] = 'p';
+    
+            // Load data from GeoTIFF
+            geotiffmap_t *map;
+            err = initMap(&map, srctiff, srcfile, 0);
+            if(err)
+                exit(err);
+            
+            // Scale
+            if(scale != 1.0)
+                scaleImage(&map, scale);
+            
+            // Colorize
+            colorize(map, colorscheme);
+            
+            // Close TIFF
+            TIFFClose(srctiff);
+            
+            // Render PNG
+            renderPNG(map, outfile, 0);
+            
+            // Return PNG to primary node
+            returnPNG(outsocketfd, outfile);
+        }        
 	} else {
 	    // Handle local rendering
 	    for(int i = 0; i < joblist->num_jobs; i++) {

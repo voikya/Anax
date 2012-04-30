@@ -46,5 +46,6 @@ int getHeaderData(int outsocket, char **filename, colorscheme_t **colorscheme, d
 int getImageFromPrimary(int outsocket, char *filename);
 int downloadImage(char *filename);
 int returnPNG(int outsocket, char *filename);
+int countComplete(joblist_t *joblist);
 
 #endif
