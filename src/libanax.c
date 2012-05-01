@@ -427,4 +427,13 @@ int renderPNG(geotiffmap_t *map, char *outfile, int suppress_output) {
 	return 0;
 }
 
+int getCorners(geotiffmap_t *map, double *top, double *bottom, double *left, double *right) {
+    *top = map->data[0][0].latitude;
+    *left = map->data[0][0].longitude;
+    *bottom = map->data[map->height - 1][map->width - 1].latitude;
+    *right = map->data[map->height - 1][map->width - 1].longitude;
+    
+    return 0;
+}
+
 //void updatePNGWriteStatus(png_structp png_ptr, png_uint32 row, int pass);

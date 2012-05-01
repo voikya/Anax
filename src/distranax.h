@@ -47,5 +47,6 @@ int getImageFromPrimary(int outsocket, char *filename);
 int downloadImage(char *filename);
 int returnPNG(int outsocket, char *filename);
 int countComplete(joblist_t *joblist);
+int sendCorners(int outsocketfd, double top, double bottom, double left, double right);
 
 #endif

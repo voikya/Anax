@@ -183,6 +183,17 @@ void *runRemoteJob(void *argt) {
         }
     }
     
+    // Receive information on corner coordinates from remote machine
+    double doublebuf[4];
+    int bytes_rcvd = 0;
+    while(bytes_rcvd < 4 * sizeof(double)) {
+        bytes_rcvd += recv(destination->socketfd, &doublebuf + bytes_rcvd, 4 * sizeof(double) - bytes_rcvd, 0);
+    }
+    job->top_lat = doublebuf[0];
+    job->bottom_lat = doublebuf[1];
+    job->left_lon = doublebuf[2];
+    job->right_lon = doublebuf[3];
+    
     // Receive progress updates from remote machine
     
     // Receive output file from remote machine
@@ -191,7 +202,7 @@ void *runRemoteJob(void *argt) {
     FILE *fp = fopen(outfile, "w+");
     
     uint32_t filesize = 0;
-    int bytes_rcvd = 0;
+    bytes_rcvd = 0;
     while(bytes_rcvd < 4) {
         bytes_rcvd += recv(destination->socketfd, &filesize, 4 - bytes_rcvd, 0);
     }
@@ -389,6 +400,21 @@ int countComplete(joblist_t *joblist) {
     }
     
     return count;
+}
+
+int sendCorners(int outsocket, double top, double bottom, double left, double right) {
+    double buf[4];
+    buf[0] = top;
+    buf[1] = bottom;
+    buf[2] = left;
+    buf[3] = right;
+    
+    int bytes_sent = 0;
+    while(bytes_sent < 4 * sizeof(double)) {
+        bytes_sent += send(outsocket, &buf, 4, 0);
+    }
+    
+    return 0;
 }
 
 

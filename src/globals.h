@@ -44,6 +44,10 @@ struct anaxjob {
 	char *name;
 	int index;
 	int status;
+	double top_lat;
+	double bottom_lat;
+	double left_lon;
+	double right_lon;
 	pthread_t thread;
 };
 typedef struct anaxjob anaxjob_t;

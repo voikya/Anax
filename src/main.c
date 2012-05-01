@@ -217,6 +217,11 @@ int main(int argc, char *argv[]) {
             if(err)
                 exit(err);
             
+            // Get corners
+            double top, bottom, left, right;
+            getCorners(map, &top, &bottom, &left, &right);
+            sendCorners(outsocketfd, top, bottom, left, right);
+            
             // Scale
             if(scale != 1.0)
                 scaleImage(&map, scale);
@@ -257,6 +262,9 @@ int main(int argc, char *argv[]) {
             err = initMap(&map, srctiff, srcfile, qflag);
             if(err)
                 exit(err);
+            
+            // Get corners
+            getCorners(map, &(joblist->jobs[i].top_lat), &(joblist->jobs[i].bottom_lat), &(joblist->jobs[i].left_lon), &(joblist->jobs[i].right_lon));
     
             // Scale
             if(scale != 1.0) {
