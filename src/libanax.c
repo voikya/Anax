@@ -386,7 +386,7 @@ int renderPNG(geotiffmap_t *map, char *outfile, int suppress_output) {
 		if(!suppress_output) {
 			if((int)percent_interval > 0) {
 				if(i % (int)percent_interval == 0) {
-					printf("%i%%\n", (int)(i / percent_interval));
+					printf("%i%%\n", (int)(i / percent_interval) + 1);
 				}
 			} else {
 				printf("%i%%\n", (i * 100) / (int)map->height);
