@@ -14,17 +14,10 @@ struct color {
 };
 typedef struct color rgb_t;
 
-struct coordinate {
-	int degree;
-	int minute;
-	int second;
-};
-typedef struct coordinate coord_t;
-
 struct point {
 	int16_t elevation;
-	coord_t latitude;
-	coord_t longitude;
+	double latitude;
+	double longitude;
 	rgb_t color;
 };
 typedef struct point point_t;

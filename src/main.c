@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <tiffio.h>
+#include <xtiffio.h>
 #include <geotiff.h>
 #include <unistd.h>
 #include "globals.h"
@@ -198,7 +199,7 @@ int main(int argc, char *argv[]) {
             filename_without_path = (filename_without_path == NULL) ? 0 : filename_without_path + 1;
             char srcfile[strlen(filename_without_path) + 6];
             sprintf(srcfile, "/tmp/%s", filename_without_path);
-            TIFF *srctiff = TIFFOpen(srcfile, "r");
+            TIFF *srctiff = XTIFFOpen(srcfile, "r");
             if(srctiff == NULL) {
                 fprintf(stderr, "Error: No such file: %s\n", srcfile);
                 exit(ANAX_ERR_FILE_DOES_NOT_EXIST);
@@ -224,7 +225,7 @@ int main(int argc, char *argv[]) {
             colorize(map, colorscheme);
             
             // Close TIFF
-            TIFFClose(srctiff);
+            XTIFFClose(srctiff);
             
             // Render PNG
             renderPNG(map, outfile, 0);
@@ -245,7 +246,7 @@ int main(int argc, char *argv[]) {
             ////// End temporary code
     
             // Open TIFF file
-            TIFF *srctiff = TIFFOpen(srcfile, "r");
+            TIFF *srctiff = XTIFFOpen(srcfile, "r");
             if(srctiff == NULL) {
                 fprintf(stderr, "Error: No such file: %s\n", srcfile);
                 exit(ANAX_ERR_FILE_DOES_NOT_EXIST);
@@ -276,7 +277,7 @@ int main(int argc, char *argv[]) {
             colorize(map, colorscheme);
     
             // Close TIFF
-            TIFFClose(srctiff);
+            XTIFFClose(srctiff);
     
             // Render PNG
             renderPNG(map, outfile, qflag);

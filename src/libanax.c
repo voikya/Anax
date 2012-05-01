@@ -12,12 +12,13 @@
 
 void SHOW_DATA_AT_POINT(geotiffmap_t *map, int r, int c) {
 	printf("SHOWING DATA AT ROW %i, COL %i\n", r, c);
-	printf("Location: %i°%i'%i\"N, %i°%i'%i\"E\n", map->data[r][c].latitude.degree,
+	printf("Location: %f°N, %f°E\n", map->data[r][c].latitude, map->data[r][c].longitude);
+	/*printf("Location: %i°%i'%f\"N, %i°%i'%f\"E\n", map->data[r][c].latitude.degree,
 	                                               map->data[r][c].latitude.minute,
 	                                               map->data[r][c].latitude.second,
 	                                               map->data[r][c].longitude.degree,
 	                                               map->data[r][c].longitude.minute,
-	                                               map->data[r][c].longitude.second);
+	                                               map->data[r][c].longitude.second);*/
 	printf("Elevation: %im\n", (int)map->data[r][c].elevation);
 	printf("Color: [R %i, G %i, B %i, A %f]\n", map->data[r][c].color.r, map->data[r][c].color.g, map->data[r][c].color.b, map->data[r][c].color.a);
 }
@@ -34,6 +35,9 @@ void SHOW_COLOR_SCHEME(colorscheme_t *colors) {
 
 int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile, int suppress_output) {
 	int err;
+	
+	// Load GTIF type from TIFF
+	GTIF *geotiff = GTIFNew(tiff);
 
 	// Allocate main map struct
 	*map = malloc(sizeof(geotiffmap_t));
@@ -51,6 +55,23 @@ int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile, int suppress_output) 
 	// Get dimensions of GeoTIFF file
 	TIFFGetField(tiff, TIFFTAG_IMAGEWIDTH, &((*map)->width));
 	TIFFGetField(tiff, TIFFTAG_IMAGELENGTH, &((*map)->height));
+	
+	// Get the coordinates of each corner
+	double left_lon, right_lon, top_lat, bottom_lat;
+	double change_in_lon, change_in_lat;
+	double x, y;
+	x = 0.0;
+	y = 0.0;
+	GTIFImageToPCS(geotiff, &x, &y);
+	left_lon = x;
+	top_lat = y;
+	x = (double)((*map)->width - 1);
+	y = (double)((*map)->height - 1);
+	GTIFImageToPCS(geotiff, &x, &y);
+	right_lon = x;
+	bottom_lat = y;
+	change_in_lon = right_lon - left_lon;
+	change_in_lat = top_lat - bottom_lat;
 
 	// Allocate enough memory for the entire map struct
     // (This is all done all at once to help ensure there won't be any out-of-memory
@@ -75,6 +96,7 @@ int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile, int suppress_output) 
 		err = TIFFReadScanline(tiff, &(tiff_line.buf), row, 0);
 		if(err != 1)
 			return ANAX_ERR_TIFF_SCANLINE;
+		double lat = bottom_lat + change_in_lat * (1.0 - ((double)row / ((double)((*map)->height) - 1.0)));
 		for(int col = 0; col < (*map)->width; col++) {
 			(*map)->data[row][col].elevation = tiff_line.data[col];
 			if((*map)->data[row][col].elevation > (*map)->max_elevation) {
@@ -83,6 +105,8 @@ int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile, int suppress_output) 
 			if((*map)->data[row][col].elevation < (*map)->min_elevation) {
 				(*map)->min_elevation = (*map)->data[row][col].elevation;
 			}
+            (*map)->data[row][col].latitude = lat;
+            (*map)->data[row][col].longitude = left_lon + change_in_lon * ((double)col / ((double)((*map)->width) - 1.0));
 		}
 	}
 
