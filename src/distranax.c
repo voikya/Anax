@@ -133,7 +133,7 @@ void *runRemoteJob(void *argt) {
     // 8 - scale
     // * - name
     // * - colors (E: 2, R: 1, G: 1, B: 1, A: 8)
-    int num_bytes = 8 + strlen(job->name) + (colorscheme->num_stops * 13);
+    int num_bytes = 16 + strlen(job->name) + (colorscheme->num_stops * 13);
     uint8_t *outbuf = calloc(num_bytes, sizeof(uint8_t));
     struct header *hdr = (struct header *)outbuf;
     hdr->packet_size = (uint16_t)num_bytes;
