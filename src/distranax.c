@@ -45,6 +45,15 @@ int loadDestinationList(char *destfile, destinationlist_t **destinationlist) {
 		if((*destinationlist)->destinations[c-1].addr[strlen(buf) - 1] == '\n') {
 			(*destinationlist)->destinations[c-1].addr[strlen(buf) - 1] = 0;
 		}
+		
+		(*destinationlist)->destinations[c-1].socketfd = -1;
+		(*destinationlist)->destinations[c-1].status = ANAX_STATE_NOJOB;
+		(*destinationlist)->destinations[c-1].num_jobs = 0;
+		(*destinationlist)->destinations[c-1].jobs = NULL;
+		pthread_mutex_init(&((*destinationlist)->destinations[c-1].ready_mutex), NULL);
+		pthread_cond_init(&((*destinationlist)->destinations[c-1].ready_cond), NULL);
+		(*destinationlist)->destinations[c-1].ready = 0;
+		(*destinationlist)->destinations[c-1].complete = 0;
 	}
 
 	(*destinationlist)->num_destinations = c;
@@ -54,7 +63,7 @@ int loadDestinationList(char *destfile, destinationlist_t **destinationlist) {
 	return 0;
 }
 
-int connectToRemoteHost(destination_t *dest) {
+int connectToRemoteHost(destination_t *dest, char *port) {
 	int socketfd;
 	struct addrinfo hints, *servinfo, *p;
 	int rv;
@@ -64,7 +73,7 @@ int connectToRemoteHost(destination_t *dest) {
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
 
-	if((rv = getaddrinfo(dest->addr, REMOTE_PORT, &hints, &servinfo)) != 0) {
+	if((rv = getaddrinfo(dest->addr, port, &hints, &servinfo)) != 0) {
 		return ANAX_ERR_COULD_NOT_RESOLVE_ADDR;
 	}
 
@@ -93,24 +102,103 @@ int connectToRemoteHost(destination_t *dest) {
 	return 0;
 }
 
-int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist, colorscheme_t *colorscheme, double scale) {
-    printf("Distributing...\n");
+int initRemoteHosts(destinationlist_t *destinationlist, colorscheme_t *colorscheme, double scale) {
+    printf("Packing initialization header... ");
+    
+    // Allocate and pack an initialization header
+    int packetsize = sizeof(init_hdr_t) + (sizeof(compressed_color_t) * colorscheme->num_stops);
+    uint8_t *packet = calloc(packetsize, sizeof(uint8_t));
+    init_hdr_t *hdr = (init_hdr_t *)packet;
+    hdr->packet_size = (uint32_t)packetsize;
+    hdr->type = HDR_INITIALIZATION;
+    hdr->is_abs = (uint8_t)(colorscheme->isAbsolute);
+    hdr->num_colors = (uint8_t)(colorscheme->num_stops);
+    hdr->scale = scale;
+    
+    // Pack the colorscheme after the header
+    for(int i = 1; i <= colorscheme->num_stops; i++) {
+        compressed_color_t *comp_c = (compressed_color_t *)(packet + sizeof(init_hdr_t) + ((i - 1) * sizeof(compressed_color_t)));
+        comp_c->elevation = (int32_t)(colorscheme->colors[i].elevation);
+        comp_c->red = (uint8_t)(colorscheme->colors[i].color.r);
+        comp_c->green = (uint8_t)(colorscheme->colors[i].color.g);
+        comp_c->blue = (uint8_t)(colorscheme->colors[i].color.b);
+        comp_c->alpha = (double)(colorscheme->colors[i].color.a);
+    }
+    
+    // Determine the size needed for a nodes packet
+    packetsize = sizeof(nodes_hdr_t);
+    for(int i = 0; i < destinationlist->num_destinations; i++) {
+        packetsize += 2 + strlen(destinationlist->destinations[i].addr);
+    }
+    
+    // Allocate and pack a nodes header
+    uint8_t *packet2 = calloc(packetsize, sizeof(uint8_t));
+    nodes_hdr_t *hdr2 = (nodes_hdr_t *)packet2;
+    hdr2->packet_size = (uint32_t)packetsize;
+    hdr2->type = HDR_NODES;
+    hdr2->num_nodes = (uint16_t)(destinationlist->num_destinations);
+    
+    // Pack the node addresses after the header
+    uint8_t *cur_pos = packet + sizeof(nodes_hdr_t);
+    for(int i = 0; i < destinationlist->num_destinations; i++) {
+        uint16_t len = strlen(destinationlist->destinations[i].addr);
+        memcpy(cur_pos, &len, 2);
+        memcpy(cur_pos + 2, &(destinationlist->destinations[i].addr), strlen(destinationlist->destinations[i].addr));
+        cur_pos += 2 + strlen(destinationlist->destinations[i].addr);
+    }
+    
+    printf("Done\n");
+    printf("Initializing remote nodes...");
+    
+    // Launch a new thread for each remote node
+    for(int i = 0; i < destinationlist->num_destinations; i++) {
+        if(destinationlist->destinations[i].status == ANAX_STATE_NOJOB) {
+            hdr->index = (uint8_t)i;
+            threadarg_t *argt = malloc(sizeof(threadarg_t));
+            argt->dest = &(destinationlist->destinations[i]);
+            argt->init_pkt = packet;
+            argt->init_pkt_size = (int)(hdr->packet_size);
+            argt->nodes_pkt = packet2;
+            argt->nodes_pkt_size = (int)(hdr2->packet_size);
+            
+            pthread_create(&(destinationlist->destinations[i].thread), NULL, runRemoteNode, argt);
+        }
+    }
+    
+    printf("Done\n");
+    
+    return 0;
+}
+
+int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist) {
     for(int i = 0; i < destinationlist->num_destinations; i++) {
         if(destinationlist->destinations[i].status == ANAX_STATE_NOJOB) {
             for(int j = 0; j < joblist->num_jobs; j++) {
                 if(joblist->jobs[j].status != ANAX_STATE_PENDING)
                     continue;
                 joblist->jobs[j].status = ANAX_STATE_INPROGRESS;
-                //connectToRemoteHost(&(destinationlist->destinations[i]));
                 destinationlist->destinations[i].status = ANAX_STATE_INPROGRESS;
                 
-                threadarg_t *argt = malloc(sizeof(threadarg_t));
-                argt->dest = &(destinationlist->destinations[i]);
-                argt->job = &(joblist->jobs[j]);
-                argt->colorscheme = colorscheme;
-                argt->scale = scale;
-                pthread_create(&(joblist->jobs[j].thread), NULL, runRemoteJob, argt);
+                pthread_mutex_lock(&(destinationlist->destinations[i].ready_mutex));
+                destinationlist->destinations[i].num_jobs++;
+                destinationlist->destinations[i].jobs = realloc(destinationlist->destinations[i].jobs, destinationlist->destinations[i].num_jobs * sizeof(anaxjob_t *));
+                destinationlist->destinations[i].jobs[destinationlist->destinations[i].num_jobs - 1] = &(joblist->jobs[j]);
+                destinationlist->destinations[i].ready = 1;
+                pthread_cond_signal(&(destinationlist->destinations[i].ready_cond));
+                pthread_mutex_unlock(&(destinationlist->destinations[i].ready_mutex));
+                
+                printf("Assigning %s to %s.", joblist->jobs[j].name, destinationlist->destinations[i].addr);
+                
                 break;
+            }
+            
+            // If there are no more jobs available, let the thread know it is done
+            if(destinationlist->destinations[i].status == ANAX_STATE_NOJOB) {
+                pthread_mutex_lock(&(destinationlist->destinations[i].ready_mutex));
+                destinationlist->destinations[i].complete = 1;
+                destinationlist->destinations[i].ready = 1;
+                pthread_cond_signal(&(destinationlist->destinations[i].ready_cond));
+                pthread_mutex_unlock(&(destinationlist->destinations[i].ready_mutex));
             }
         }
     }
@@ -118,6 +206,164 @@ int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist, color
     return 0;
 }
 
+void *runRemoteNode(void *argt) {
+    // Unpack thread argument struct
+    destination_t *destination = ((threadarg_t *)argt)->dest;
+    uint8_t *init_pkt = ((threadarg_t *)argt)->init_pkt;
+    int init_pkt_size = ((threadarg_t *)argt)->init_pkt_size;
+    uint8_t *nodes_pkt = ((threadarg_t *)argt)->nodes_pkt;
+    int nodes_pkt_size = ((threadarg_t *)argt)->nodes_pkt_size;
+
+    int bytes_sent = 0;
+    int num_bytes = 0;
+
+    // Send out initialization header
+    while(bytes_sent < init_pkt_size) {
+        bytes_sent += send(destination->socketfd, init_pkt + bytes_sent, init_pkt_size - bytes_sent, 0);
+    }
+    
+    // Send out nodes header
+    bytes_sent = 0;
+    while(bytes_sent < nodes_pkt_size) {
+        bytes_sent += send(destination->socketfd, nodes_pkt + bytes_sent, nodes_pkt_size - bytes_sent, 0);
+    }
+    
+    // Send out jobs whenever the remote node is jobless
+    while(!destination->complete) {
+        // Block until a job has been assigned
+        pthread_mutex_lock(&(destination->ready_mutex));
+        while(!destination->ready) {
+            pthread_cond_wait(&(destination->ready_cond), &(destination->ready_mutex));
+        }
+        pthread_mutex_unlock(&(destination->ready_mutex));
+        destination->ready = 0;
+        
+        if(destination->complete)
+            continue;
+        
+        // Get the job
+        anaxjob_t *newjob = destination->jobs[destination->num_jobs - 1];
+        
+        // Identify whether a local GeoTIFF needs to be transferred to the remote host
+        // or if the host can download it off a third-party server, then pack the
+        // appropriate headers and payloads
+        uint8_t *outbuf;
+        
+        if(strstr(newjob->name, "http://")) {
+            // Only need to send URL
+
+            // Allocate space for the packet
+            num_bytes = sizeof(tiff_hdr_t) + strlen(newjob->name);
+            outbuf = calloc(num_bytes, sizeof(uint8_t));
+            
+            // Pack the header and payload
+            tiff_hdr_t *hdr = (tiff_hdr_t *)outbuf;
+            hdr->packet_size = (uint32_t)num_bytes;
+            hdr->type = HDR_TIFF;
+            hdr->contents = PACKET_HAS_URL;
+            hdr->string_length = (uint16_t)strlen(newjob->name);
+            hdr->index = (uint16_t)(newjob->index);
+            memcpy(outbuf + sizeof(tiff_hdr_t), newjob->name, strlen(newjob->name));
+            
+            // Send the packet to the remote node
+            bytes_sent = 0;
+            while(bytes_sent < num_bytes) {
+                bytes_sent += send(destination->socketfd, outbuf + bytes_sent, num_bytes - bytes_sent, 0);
+            }
+        } else {
+            // Need to send the GeoTIFF
+            
+            // Open the file
+            FILE *fp = fopen(newjob->name, "r");
+            
+            // Get the file size
+            fseek(fp, 0L, SEEK_END);
+            int filesize = ftell(fp);
+            rewind(fp);
+            
+            // Allocate space for the packet
+            num_bytes = sizeof(tiff_hdr_t) + strlen(newjob->name);
+            outbuf = calloc(num_bytes, sizeof(uint8_t));
+            
+            // Pack the header and payload
+            tiff_hdr_t *hdr = (tiff_hdr_t *)outbuf;
+            hdr->packet_size = (uint32_t)num_bytes;
+            hdr->type = HDR_TIFF;
+            hdr->contents = PACKET_HAS_DATA;
+            hdr->string_length = (uint16_t)strlen(newjob->name);
+            hdr->file_size = (uint32_t)filesize;
+            hdr->index = (uint16_t)(newjob->index);
+            memcpy(outbuf + sizeof(tiff_hdr_t), newjob->name, strlen(newjob->name));
+            
+            // Send the packet to the remote node
+            bytes_sent = 0;
+            while(bytes_sent < num_bytes) {
+                bytes_sent += send(destination->socketfd, outbuf + bytes_sent, num_bytes - bytes_sent, 0);
+            }
+            
+            // Send the file
+            bytes_sent = 0;
+            uint8_t buf[8192];
+            while(bytes_sent < filesize) {
+                int bytes_sent_tmp = 0;
+                int bytes_to_send = fread(buf, sizeof(uint8_t), 8192, fp);
+                while(bytes_sent_tmp < bytes_to_send) {
+                    bytes_sent_tmp += send(destination->socketfd, buf, bytes_to_send - bytes_sent_tmp, 0);
+                }
+                bytes_sent += bytes_sent_tmp;
+            }
+            
+            fclose(fp);
+        }
+        
+        // Send an empty tiff header to alert the remote node that there are no more tiffs
+        tiff_hdr_t *hdr = calloc(sizeof(tiff_hdr_t), sizeof(uint8_t));
+        hdr->packet_size = (uint32_t)sizeof(tiff_hdr_t);
+        hdr->type = HDR_TIFF;
+        hdr->contents = PACKET_IS_EMPTY;
+        bytes_sent = 0;
+        while(bytes_sent < sizeof(tiff_hdr_t)) {
+            bytes_sent += send(destination->socketfd, hdr, sizeof(tiff_hdr_t) - bytes_sent, 0);
+        }
+                
+        free(outbuf);
+        
+        // Handle LOADED, COMPLETE, and NOJOB status updates from remote
+        int has_job = 1;
+        while(has_job) {
+            status_change_hdr_t buf;
+            int bytes_rcvd = 0;
+            while(bytes_rcvd < sizeof(status_change_hdr_t)) {
+                bytes_rcvd += recv(destination->socketfd, &buf + bytes_rcvd, sizeof(status_change_hdr_t) - bytes_rcvd, 0);
+            }
+            if(buf.type == HDR_STATUS_CHANGE) {
+                switch(buf.status) {
+                    case ANAX_STATE_LOADED:
+                        destination->status = ANAX_STATE_LOADED;
+                        newjob->status = ANAX_STATE_LOADED;
+                        break;
+                    case ANAX_STATE_COMPLETE:
+                        destination->status = ANAX_STATE_COMPLETE;
+                        newjob->status = ANAX_STATE_COMPLETE;
+                        break;
+                    case ANAX_STATE_NOJOB:
+                        has_job = 0;
+                        break;
+                }
+            }
+        }
+        
+        // Update local variables and signal the main thread that a new job is needed
+        pthread_mutex_lock(&ready_mutex);
+        destination->status = ANAX_STATE_NOJOB;
+        pthread_cond_signal(&ready_cond);
+        pthread_mutex_unlock(&ready_mutex);
+    }
+    
+    return 0;
+}
+
+/*
 void *runRemoteJob(void *argt) {
     destination_t *destination = ((threadarg_t *)argt)->dest;
     anaxjob_t *job = ((threadarg_t *)argt)->job;
@@ -227,6 +473,7 @@ void *runRemoteJob(void *argt) {
     //free(argt);
     return NULL;
 }
+*/
 
 int initRemoteListener(int *socketfd) {
     // Get socket
@@ -257,92 +504,169 @@ int initRemoteListener(int *socketfd) {
     return 0;
 }
 
-int getHeaderData(int outsocket, char **filename, colorscheme_t **colorscheme, double *scale) {
+int getInitHeaderData(int outsocket, int *whoami, colorscheme_t **colorscheme, double *scale) {
     int bytes_rcvd = 0;
-    uint16_t packet_size;
+    uint32_t packet_size;
     
-    while(bytes_rcvd < sizeof(uint16_t)) {
-        bytes_rcvd += recv(outsocket, &packet_size, sizeof(uint16_t), 0);
+    // Get packet size
+    while(bytes_rcvd < sizeof(uint32_t)) {
+        bytes_rcvd += recv(outsocket, &packet_size, sizeof(uint32_t), 0);
     }
     
-    uint8_t buf[packet_size - 2];
+    // Allocate a buffer
+    uint8_t *buf = calloc(packet_size, sizeof(uint8_t));
     
-    while(bytes_rcvd < packet_size - 2) {
-        bytes_rcvd += recv(outsocket, &buf, packet_size - bytes_rcvd, 0);
+    // Read in the rest of the packet
+    while(bytes_rcvd < packet_size) {
+        bytes_rcvd += recv(outsocket, buf + 4, packet_size - 4, 0);
     }
-    uint16_t strlength = *(uint16_t *)buf;
-    uint16_t numcolors = *(uint16_t *)(buf + 2);
-    uint8_t isAbs = *(uint8_t *)(buf + 4);
-    *scale = *(double *)(buf + 6);
-    *filename = calloc(strlength + 1, sizeof(char));
-    memcpy(*filename, buf + 14, strlength);
+    init_hdr_t *hdr = (init_hdr_t *)buf;
     
-    printf("Received %i bytes\n", bytes_rcvd);
-    printf("Packet size: %i\n", (int)packet_size);
-    printf("String length: %i\n", (int)strlength);
-    printf("Number of colors: %i\n", (int)numcolors);
-    printf("Is Absolute: %i\n", (int)isAbs);
-    printf("Scale: %f\n", *scale);
-    printf("File: %s\n", *filename);
-    
-    *colorscheme = malloc(sizeof(colorscheme_t));
-    (*colorscheme)->isAbsolute = (int)isAbs;
-    (*colorscheme)->num_stops = (int)numcolors;
-    (*colorscheme)->colors = calloc(numcolors + 2, sizeof(colorstop_t));
-    
-    int coloroffset = 14 + strlength;
-    for(int i = 1; i <= numcolors; i++) {
-        (*colorscheme)->colors[i].elevation = *(uint16_t *)(buf + coloroffset);
-        (*colorscheme)->colors[i].color.r = *(uint8_t *)(buf + coloroffset + 2);
-        (*colorscheme)->colors[i].color.g = *(uint8_t *)(buf + coloroffset + 3);
-        (*colorscheme)->colors[i].color.b = *(uint8_t *)(buf + coloroffset + 4);
-        (*colorscheme)->colors[i].color.a = *(double *)(buf + coloroffset + 5);
-        coloroffset += 13;
+    // Store the data
+    if(hdr->type == HDR_INITIALIZATION) {
+        *scale = hdr->scale;
+        *whoami = (int)hdr->index;
+        
+        *colorscheme = malloc(sizeof(colorscheme_t));
+        (*colorscheme)->isAbsolute = (int)(hdr->is_abs);
+        (*colorscheme)->num_stops = (int)(hdr->num_colors);
+        (*colorscheme)->colors = calloc(hdr->num_colors + 2, sizeof(colorstop_t));
+        
+        uint8_t *coloroffset = buf + sizeof(init_hdr_t);
+        for(int i = 1; i <= hdr->num_colors; i++) {
+            compressed_color_t *color = (compressed_color_t *)coloroffset + ((i - 1) * sizeof(compressed_color_t));
+            (*colorscheme)->colors[i].elevation = (int16_t)(color->elevation);
+            (*colorscheme)->colors[i].color.r = (int)(color->red);
+            (*colorscheme)->colors[i].color.g = (int)(color->green);
+            (*colorscheme)->colors[i].color.b = (int)(color->blue);
+        }
+        memcpy(&((*colorscheme)->colors[0]), &((*colorscheme)->colors[1]), sizeof(colorstop_t));
+        memcpy(&((*colorscheme)->colors[(*colorscheme)->num_stops + 1]), &((*colorscheme)->colors[(*colorscheme)->num_stops]), sizeof(colorstop_t));
     }
-    memcpy(&((*colorscheme)->colors[0]), &((*colorscheme)->colors[1]), sizeof(colorstop_t));
-    memcpy(&((*colorscheme)->colors[numcolors + 1]), &((*colorscheme)->colors[numcolors]), sizeof(colorstop_t));
+    
     return 0;
 }
 
-int getImageFromPrimary(int outsocket, char *filename) {
+int getNodesHeaderData(int outsocket, destinationlist_t **remotenodes) {
+    int bytes_rcvd = 0;
+    uint32_t packet_size;
+    
+    // Get packet size
+    while(bytes_rcvd < sizeof(uint32_t)) {
+        bytes_rcvd += recv(outsocket, &packet_size, sizeof(uint32_t), 0);
+    }
+    
+    // Allocate a buffer
+    uint8_t *buf = calloc(packet_size, sizeof(uint8_t));
+    
+    // Read in the rest of the packet
+    while(bytes_rcvd < packet_size) {
+        bytes_rcvd += recv(outsocket, buf + 4, packet_size - 4, 0);
+    }
+    nodes_hdr_t *hdr = (nodes_hdr_t *)buf;
+    
+    // Store the data
+    if(hdr->type == HDR_NODES) {
+        *remotenodes = malloc(sizeof(destinationlist_t));
+        (*remotenodes)->num_destinations = (int)(hdr->num_nodes);
+        (*remotenodes)->destinations = calloc(hdr->num_nodes, sizeof(destination_t));
+        
+        uint8_t *offset = buf + sizeof(nodes_hdr_t);
+        for(int i = 0; i < hdr->num_nodes; i++) {
+            uint16_t length = *((uint16_t *)offset);
+            strncpy((*remotenodes)->destinations[i].addr, (char *)(offset + 2), length);
+            (*remotenodes)->destinations[i].status = ANAX_STATE_NOJOB;
+            (*remotenodes)->destinations[i].jobs = NULL;
+            (*remotenodes)->destinations[i].socketfd = -1;
+            offset += 2 + length;
+        }
+    }
+    
+    free(buf);
+    
+    return 0;
+}
+
+int getGeoTIFF(int outsocket, joblist_t *localjobs) {
+    int bytes_rcvd = 0;
+    uint32_t packet_size;
+    
+    // Get packet size
+    while(bytes_rcvd < sizeof(uint32_t)) {
+        bytes_rcvd += recv(outsocket, &packet_size, sizeof(uint32_t), 0);
+    }
+    
+    // Allocate a buffer
+    uint8_t *buf = calloc(packet_size, sizeof(uint8_t));
+    
+    // Read in the rest of the packet
+    while(bytes_rcvd < packet_size) {
+        bytes_rcvd += recv(outsocket, buf + 4, packet_size - 4, 0);
+    }
+    tiff_hdr_t *hdr = (tiff_hdr_t *)buf;
+    
+    if(hdr->type == HDR_TIFF) {
+        if(hdr->contents == PACKET_IS_EMPTY) {
+            return ANAX_ERR_NO_MAP;
+        }
+    
+        // Set up local information struct
+        localjobs->num_jobs++;
+        localjobs->jobs = realloc(localjobs->jobs, localjobs->num_jobs * sizeof(anaxjob_t *));
+        anaxjob_t *current_job = &(localjobs->jobs[localjobs->num_jobs - 1]);
+        current_job->name = calloc(hdr->string_length + 1, sizeof(char));
+        strncpy(current_job->name, (char *)(buf + sizeof(tiff_hdr_t)), hdr->string_length);
+        current_job->index = hdr->index;
+        current_job->status = ANAX_STATE_PENDING;
+
+        // Get and store what will be the file's local location
+        char *filename_without_path = strrchr(current_job->name, '/');
+        filename_without_path = (filename_without_path == NULL) ? 0 : filename_without_path + 1;
+        current_job->outfile = calloc(strlen(filename_without_path) + 6, sizeof(char));
+        sprintf(current_job->outfile, "/tmp/%s", filename_without_path);
+        
+        // Get file size
+        uint32_t file_size = hdr->file_size;
+
+        // Get image data
+        if(hdr->contents == PACKET_HAS_DATA) {
+            // Local file, must request transfer from originating node            
+            getImageFromPrimary(outsocket, current_job->name, current_job->outfile, file_size);
+        } else {
+            // Remote file, must be downloaded
+            downloadImage(current_job->name, current_job->outfile);
+        }
+    }
+
+    return 0;
+}
+
+int getImageFromPrimary(int outsocket, char *filename, char *outfile, uint32_t filesize) {
     int bytes_rcvd = 0;
 
-    char *filename_without_path = strrchr(filename, '/');
-    filename_without_path = (filename_without_path == NULL) ? 0 : filename_without_path + 1;
-    char outfile[strlen(filename_without_path) + 6];
-    sprintf(outfile, "/tmp/%s", filename_without_path);
     FILE *fp = fopen(outfile, "w+");
     
-    uint32_t filesize = 0;
-    while(bytes_rcvd < 4) {
-        bytes_rcvd += recv(outsocket, &filesize, 4 - bytes_rcvd, 0);
-    }
     printf("File size: %i\n", (int)filesize);
 
-    printf("Receiving image from primary node...");
+    printf("Receiving image from primary node... ");
 
     uint8_t buf[8192]; // 8 kilobytes
-    bytes_rcvd = 0;
     while(bytes_rcvd < filesize) {
         int bytes_rcvd_tmp = recv(outsocket, buf, 8192, 0);
         fwrite(buf, sizeof(uint8_t), bytes_rcvd_tmp, fp);
         bytes_rcvd += bytes_rcvd_tmp;
     }
     
-    printf("  Done.\n");
+    printf("Done.\n");
     
     fclose(fp);
     
     return 0;
 }
 
-int downloadImage(char *filename) {
-    printf("Downloading image...");
-    
-    char *filename_without_path = strrchr(filename, '/');
-    filename_without_path = (filename_without_path == NULL) ? 0 : filename_without_path + 1;
-    char outfile[strlen(filename_without_path) + 6];
-    sprintf(outfile, "/tmp/%s", filename_without_path);
+int downloadImage(char *filename, char *outfile) {
+    printf("Downloading image... ");
+
     FILE *fp = fopen(outfile, "w+");
     
     CURL *curl;
@@ -355,9 +679,419 @@ int downloadImage(char *filename) {
         curl_easy_cleanup(curl);
     }
     
-    printf("  Done.\n");
+    printf("Done.\n");
     
     fclose(fp);
+    
+    return 0;
+}
+
+int sendStatusUpdate(int outsocket, destinationlist_t *remotenodes, anaxjob_t *current_job, int whoami) {
+    // Allocate status update header
+    status_change_hdr_t *hdr = malloc(sizeof(status_change_hdr_t));
+    
+    // Pack status update header
+    if(current_job) {
+        // Send a status update for a single job
+        hdr->packet_size = (uint32_t)sizeof(status_change_hdr_t);
+        hdr->type = HDR_STATUS_CHANGE;
+        hdr->status = current_job->status;
+        hdr->job_id = current_job->index;
+        hdr->sender_id = whoami;
+        hdr->top = current_job->top_lat;
+        hdr->bottom = current_job->bottom_lat;
+        hdr->left = current_job->left_lon;
+        hdr->right = current_job->right_lon;
+    } else {
+        // Inform all nodes that all of this node's GeoTIFFs have been loaded
+        hdr->packet_size = (uint32_t)sizeof(status_change_hdr_t);
+        hdr->type = HDR_STATUS_CHANGE;
+        hdr->status = ANAX_STATE_RENDERING;
+        hdr->job_id = 0;
+        hdr->sender_id = whoami;
+        hdr->top = 0;
+        hdr->bottom = 0;
+        hdr->left = 0;
+        hdr->right = 0;
+    }
+    
+    // Send update to all nodes
+    for(int i = 0; i < remotenodes->num_destinations; i++) {
+        if(i != whoami) {
+            // Open a socket if one has not yet been created
+            if(remotenodes->destinations[i].socketfd == -1) {
+                connectToRemoteHost(&(remotenodes->destinations[i]), COMM_PORT);
+            }
+            
+            // Send the update
+            int bytes_sent = 0;
+            while(bytes_sent < sizeof(status_change_hdr_t)) {
+                bytes_sent += send(remotenodes->destinations[i].socketfd, hdr, sizeof(status_change_hdr_t) - bytes_sent, 0);
+            }
+        }
+    }
+    
+    // Send update to primary node
+    if(current_job) {
+        int bytes_sent = 0;
+        while(bytes_sent < sizeof(status_change_hdr_t)) {
+            bytes_sent += send(outsocket, hdr, sizeof(status_change_hdr_t) - bytes_sent, 0);
+        }
+    }
+    
+    return 0;
+}
+
+int queryForMapFrameLocal(anaxjob_t *current_job, joblist_t *localjobs) {
+    geotiffmap_t *current_map = NULL;
+    geotiffmap_t *other_map = NULL;
+    readMapData(current_job, &current_map);
+    
+    // North
+    if(!current_job->frame_coordinates.N_set) {
+        for(int i = 0; i < localjobs->num_jobs; i++) {
+            if(current_job->frame_coordinates.north_lat > localjobs->jobs[i].bottom_lat && 
+               current_job->frame_coordinates.north_lat < localjobs->jobs[i].top_lat &&
+               current_job->frame_coordinates.mid_lon > localjobs->jobs[i].left_lon &&
+               current_job->frame_coordinates.mid_lon < localjobs->jobs[i].right_lon) {
+                readMapData(&(localjobs->jobs[i]), &other_map);
+                for(int j = 0; j < MAPFRAME; j++) {
+                    for(int k = MAPFRAME; k < current_map->width + MAPFRAME; k++) {
+                        current_map->data[j][k].elevation = other_map->data[other_map->height + MAPFRAME + j][k].elevation;
+                    }
+                }
+                freeMap(other_map);
+                current_job->frame_coordinates.N_set = 1;
+                break;
+            }
+        }
+    }
+    
+    // South
+    if(!current_job->frame_coordinates.S_set) {
+        for(int i = 0; i < localjobs->num_jobs; i++) {
+            if(current_job->frame_coordinates.south_lat < localjobs->jobs[i].top_lat &&
+               current_job->frame_coordinates.south_lat > localjobs->jobs[i].bottom_lat &&
+               current_job->frame_coordinates.mid_lon > localjobs->jobs[i].left_lon &&
+               current_job->frame_coordinates.mid_lon < localjobs->jobs[i].right_lon) {
+                readMapData(&(localjobs->jobs[i]), &other_map);
+                for(int j = current_map->height + MAPFRAME; j < current_map->height + (2 * MAPFRAME); j++) {
+                    for(int k = MAPFRAME; k < current_map->width + MAPFRAME; k++) {
+                        current_map->data[j][k].elevation = other_map->data[j - other_map->height - MAPFRAME][k].elevation;
+                    }
+                }
+                freeMap(other_map);
+                current_job->frame_coordinates.S_set = 1;
+                break;
+            }
+        }
+    }
+    
+    // East
+    if(!current_job->frame_coordinates.E_set) {
+        for(int i = 0; i < localjobs->num_jobs; i++) {
+            if(current_job->frame_coordinates.east_lon > localjobs->jobs[i].left_lon &&
+               current_job->frame_coordinates.east_lon < localjobs->jobs[i].right_lon &&
+               current_job->frame_coordinates.mid_lat > localjobs->jobs[i].bottom_lat &&
+               current_job->frame_coordinates.mid_lat < localjobs->jobs[i].top_lat) {
+                readMapData(&(localjobs->jobs[i]), &other_map);
+                for(int j = MAPFRAME; j < current_map->height + MAPFRAME; j++) {
+                    for(int k = current_map->width + MAPFRAME; k < current_map->width + (2 * MAPFRAME); k++) {
+                        current_map->data[j][k].elevation = other_map->data[j][k - other_map->width - MAPFRAME].elevation;
+                    }
+                }
+                freeMap(other_map);
+                current_job->frame_coordinates.E_set = 1;
+                break;
+            }
+        }
+    }
+    
+    // West
+    if(!current_job->frame_coordinates.W_set) {
+        for(int i = 0; i < localjobs->num_jobs; i++) {
+            if(current_job->frame_coordinates.west_lon < localjobs->jobs[i].left_lon &&
+               current_job->frame_coordinates.west_lon > localjobs->jobs[i].right_lon &&
+               current_job->frame_coordinates.mid_lat > localjobs->jobs[i].bottom_lat &&
+               current_job->frame_coordinates.mid_lat < localjobs->jobs[i].top_lat) {
+                readMapData(&(localjobs->jobs[i]), &other_map);
+                for(int j = MAPFRAME; j < current_map->height + MAPFRAME; j++) {
+                    for(int k = 0; k < MAPFRAME; k++) {
+                        current_map->data[j][k].elevation = other_map->data[j][other_map->width + MAPFRAME + k].elevation;
+                    }
+                }
+                freeMap(other_map);
+                current_job->frame_coordinates.W_set = 1;
+                break;
+            }
+        }
+    }
+    
+    // Northeast
+    if(!current_job->frame_coordinates.NE_set) {
+        for(int i = 0; i < localjobs->num_jobs; i++) {
+            if(current_job->frame_coordinates.east_lon > localjobs->jobs[i].left_lon &&
+               current_job->frame_coordinates.east_lon < localjobs->jobs[i].right_lon &&
+               current_job->frame_coordinates.north_lat > localjobs->jobs[i].bottom_lat &&
+               current_job->frame_coordinates.north_lat < localjobs->jobs[i].top_lat) {
+                readMapData(&(localjobs->jobs[i]), &other_map);
+                for(int j = 0; j < MAPFRAME; j++) {
+                    for(int k = current_map->width + MAPFRAME; k < current_map->width + (2 * MAPFRAME); k++) {
+                        current_map->data[j][k].elevation = other_map->data[other_map->height + MAPFRAME + j][k - other_map->width - MAPFRAME].elevation;
+                    }
+                }
+                freeMap(other_map);
+                current_job->frame_coordinates.NE_set = 1;
+                break;
+            }
+        }
+    }
+    
+    // Southeast
+    if(!current_job->frame_coordinates.SE_set) {
+        for(int i = 0; i < localjobs->num_jobs; i++) {
+            if(current_job->frame_coordinates.east_lon > localjobs->jobs[i].left_lon &&
+               current_job->frame_coordinates.east_lon < localjobs->jobs[i].right_lon &&
+               current_job->frame_coordinates.south_lat < localjobs->jobs[i].bottom_lat &&
+               current_job->frame_coordinates.south_lat > localjobs->jobs[i].top_lat) {
+                readMapData(&(localjobs->jobs[i]), &other_map);
+                for(int j = current_map->height + MAPFRAME; j < current_map->height + (2 * MAPFRAME); j++) {
+                    for(int k = current_map->width + MAPFRAME; k < current_map->width + (2 * MAPFRAME); k++) {
+                        current_map->data[j][k].elevation = other_map->data[j - other_map->height - MAPFRAME][k - other_map->width - MAPFRAME].elevation;
+                    }
+                }
+                freeMap(other_map);
+                current_job->frame_coordinates.SE_set = 1;
+                break;
+            }
+        }
+    }
+    
+    // Southwest
+    if(!current_job->frame_coordinates.SW_set) {
+        for(int i = 0; i < localjobs->num_jobs; i++) {
+            if(current_job->frame_coordinates.west_lon < localjobs->jobs[i].right_lon &&
+               current_job->frame_coordinates.west_lon > localjobs->jobs[i].left_lon &&
+               current_job->frame_coordinates.south_lat < localjobs->jobs[i].bottom_lat &&
+               current_job->frame_coordinates.south_lat > localjobs->jobs[i].top_lat) {
+                readMapData(&(localjobs->jobs[i]), &other_map);
+                for(int j = current_map->height + MAPFRAME; j < current_map->height + (2 * MAPFRAME); j++) {
+                    for(int k = 0; k < MAPFRAME; k++) {
+                        current_map->data[j][k].elevation = other_map->data[j - other_map->height - MAPFRAME][other_map->width + MAPFRAME + k].elevation;
+                    }
+                }
+                freeMap(other_map);
+                current_job->frame_coordinates.SW_set = 1;
+                break;
+            }
+        }
+    }
+    
+    // Northwest
+    if(!current_job->frame_coordinates.NW_set) {
+        for(int i = 0; i < localjobs->num_jobs; i++) {
+            if(current_job->frame_coordinates.west_lon < localjobs->jobs[i].right_lon &&
+               current_job->frame_coordinates.west_lon > localjobs->jobs[i].left_lon &&
+               current_job->frame_coordinates.north_lat > localjobs->jobs[i].bottom_lat &&
+               current_job->frame_coordinates.north_lat < localjobs->jobs[i].top_lat) {
+                readMapData(&(localjobs->jobs[i]), &other_map);
+                for(int j = 0; j < MAPFRAME; j++) {
+                    for(int k = 0; k < MAPFRAME; k++) {
+                        current_map->data[j][k].elevation = other_map->data[other_map->height + MAPFRAME + j][other_map->width + MAPFRAME + k].elevation;
+                    }
+                }
+                freeMap(other_map);
+                current_job->frame_coordinates.NW_set = 1;
+                break;
+            }
+        }
+    }
+    
+    // Check if map is now complete
+    if(current_job->frame_coordinates.N_set &&
+       current_job->frame_coordinates.S_set &&
+       current_job->frame_coordinates.E_set &&
+       current_job->frame_coordinates.W_set &&
+       current_job->frame_coordinates.NE_set &&
+       current_job->frame_coordinates.SE_set &&
+       current_job->frame_coordinates.SW_set &&
+       current_job->frame_coordinates.NW_set) {
+        current_job->status = ANAX_STATE_RENDERING;
+    }
+    
+    // Write the map
+    writeMapData(current_job, current_map);
+    
+    return 0;
+}
+
+int queryForMapFrame(anaxjob_t *current_job, destinationlist_t *remotenodes) {
+    // North
+    if(!current_job->frame_coordinates.N_set) {
+        for(int i = 0; i < remotenodes->num_destinations; i++) {
+            for(int j = 0; j < remotenodes->destinations[i].num_jobs; j++) {
+                if(current_job->frame_coordinates.north_lat > remotenodes->destinations[i].jobs[j]->bottom_lat &&
+                   current_job->frame_coordinates.north_lat < remotenodes->destinations[i].jobs[j]->top_lat &&
+                   current_job->frame_coordinates.mid_lon > remotenodes->destinations[i].jobs[j]->left_lon &&
+                   current_job->frame_coordinates.mid_lon < remotenodes->destinations[i].jobs[j]->right_lon) {
+                    requestMapFrame(current_job, &(remotenodes->destinations[i]), j, ANAX_MAP_SOUTH);
+                    current_job->frame_coordinates.N_set = 2; // Requested; do not re-request
+                }
+            }
+        }
+    }
+    
+    // South
+    if(!current_job->frame_coordinates.S_set) {
+        for(int i = 0; i < remotenodes->num_destinations; i++) {
+            for(int j = 0; j < remotenodes->destinations[i].num_jobs; j++) {
+                if(current_job->frame_coordinates.south_lat < remotenodes->destinations[i].jobs[j]->top_lat &&
+                   current_job->frame_coordinates.south_lat > remotenodes->destinations[i].jobs[j]->bottom_lat &&
+                   current_job->frame_coordinates.mid_lon > remotenodes->destinations[i].jobs[j]->left_lon &&
+                   current_job->frame_coordinates.mid_lon < remotenodes->destinations[i].jobs[j]->right_lon) {
+                    requestMapFrame(current_job, &(remotenodes->destinations[i]), j, ANAX_MAP_NORTH);
+                    current_job->frame_coordinates.S_set = 2; // Requested; do not re-request
+                }
+            }
+        }
+    }
+
+    // East
+    if(!current_job->frame_coordinates.E_set) {
+        for(int i = 0; i < remotenodes->num_destinations; i++) {
+            for(int j = 0; j < remotenodes->destinations[i].num_jobs; j++) {
+                if(current_job->frame_coordinates.east_lon > remotenodes->destinations[i].jobs[j]->left_lon &&
+                   current_job->frame_coordinates.east_lon < remotenodes->destinations[i].jobs[j]->right_lon &&
+                   current_job->frame_coordinates.mid_lat > remotenodes->destinations[i].jobs[j]->bottom_lat &&
+                   current_job->frame_coordinates.mid_lat < remotenodes->destinations[i].jobs[j]->top_lat) {
+                    requestMapFrame(current_job, &(remotenodes->destinations[i]), j, ANAX_MAP_WEST);
+                    current_job->frame_coordinates.E_set = 2; // Requested; do not re-request
+                }
+            }
+        }
+    }
+    
+    // West
+    if(!current_job->frame_coordinates.W_set) {
+        for(int i = 0; i < remotenodes->num_destinations; i++) {
+            for(int j = 0; j < remotenodes->destinations[i].num_jobs; j++) {
+                if(current_job->frame_coordinates.west_lon < remotenodes->destinations[i].jobs[j]->left_lon &&
+                   current_job->frame_coordinates.west_lon > remotenodes->destinations[i].jobs[j]->right_lon &&
+                   current_job->frame_coordinates.mid_lat > remotenodes->destinations[i].jobs[j]->bottom_lat &&
+                   current_job->frame_coordinates.mid_lat < remotenodes->destinations[i].jobs[j]->top_lat) {
+                    requestMapFrame(current_job, &(remotenodes->destinations[i]), j, ANAX_MAP_EAST);
+                    current_job->frame_coordinates.W_set = 2; // Requested; do not re-request
+                }
+            }
+        }
+    }
+    
+    // Northeast
+    if(!current_job->frame_coordinates.NE_set) {
+        for(int i = 0; i < remotenodes->num_destinations; i++) {
+            for(int j = 0; j < remotenodes->destinations[i].num_jobs; j++) {
+                if(current_job->frame_coordinates.east_lon > remotenodes->destinations[i].jobs[j]->left_lon &&
+                   current_job->frame_coordinates.east_lon < remotenodes->destinations[i].jobs[j]->right_lon &&
+                   current_job->frame_coordinates.north_lat > remotenodes->destinations[i].jobs[j]->bottom_lat &&
+                   current_job->frame_coordinates.north_lat < remotenodes->destinations[i].jobs[j]->top_lat) {
+                    requestMapFrame(current_job, &(remotenodes->destinations[i]), j, ANAX_MAP_SOUTHWEST);
+                    current_job->frame_coordinates.NE_set = 2; // Requested; do not re-request
+                }
+            }
+        }
+    }
+
+    // Southeast
+    if(!current_job->frame_coordinates.SE_set) {
+        for(int i = 0; i < remotenodes->num_destinations; i++) {
+            for(int j = 0; j < remotenodes->destinations[i].num_jobs; j++) {
+                if(current_job->frame_coordinates.east_lon > remotenodes->destinations[i].jobs[j]->left_lon &&
+                   current_job->frame_coordinates.east_lon < remotenodes->destinations[i].jobs[j]->right_lon &&
+                   current_job->frame_coordinates.south_lat < remotenodes->destinations[i].jobs[j]->bottom_lat &&
+                   current_job->frame_coordinates.south_lat > remotenodes->destinations[i].jobs[j]->top_lat) {
+                    requestMapFrame(current_job, &(remotenodes->destinations[i]), j, ANAX_MAP_NORTHWEST);
+                    current_job->frame_coordinates.SE_set = 2; // Requested; do not re-request
+                }
+            }
+        }
+    }
+
+    // Southwest
+    if(!current_job->frame_coordinates.SW_set) {
+        for(int i = 0; i < remotenodes->num_destinations; i++) {
+            for(int j = 0; j < remotenodes->destinations[i].num_jobs; j++) {
+                if(current_job->frame_coordinates.west_lon < remotenodes->destinations[i].jobs[j]->right_lon &&
+                   current_job->frame_coordinates.west_lon > remotenodes->destinations[i].jobs[j]->left_lon &&
+                   current_job->frame_coordinates.south_lat < remotenodes->destinations[i].jobs[j]->bottom_lat &&
+                   current_job->frame_coordinates.south_lat > remotenodes->destinations[i].jobs[j]->top_lat) {
+                    requestMapFrame(current_job, &(remotenodes->destinations[i]), j, ANAX_MAP_NORTHEAST);
+                    current_job->frame_coordinates.SW_set = 2; // Requested; do not re-request
+                }
+            }
+        }
+    }
+
+    // Northwest
+    if(!current_job->frame_coordinates.NW_set) {
+        for(int i = 0; i < remotenodes->num_destinations; i++) {
+            for(int j = 0; j < remotenodes->destinations[i].num_jobs; j++) {
+                if(current_job->frame_coordinates.west_lon < remotenodes->destinations[i].jobs[j]->right_lon &&
+                   current_job->frame_coordinates.west_lon > remotenodes->destinations[i].jobs[j]->left_lon &&
+                   current_job->frame_coordinates.north_lat > remotenodes->destinations[i].jobs[j]->bottom_lat &&
+                   current_job->frame_coordinates.north_lat < remotenodes->destinations[i].jobs[j]->top_lat) {
+                    requestMapFrame(current_job, &(remotenodes->destinations[i]), j, ANAX_MAP_SOUTHEAST);
+                    current_job->frame_coordinates.NW_set = 2; // Requested; do not re-request
+                }
+            }
+        }
+    }
+    
+    return 0;
+}
+
+int requestMapFrame(anaxjob_t *current_job, destination_t *remote, int index, int request) {
+    // Allocate a frame request header
+    req_edge_hdr_t *hdr = malloc(sizeof(req_edge_hdr_t));
+    
+    // Pack the header
+    hdr->packet_size = (uint32_t)sizeof(req_edge_hdr_t);
+    hdr->type = HDR_REQ_EDGE;
+    hdr->part = (uint8)request;
+    hdr->requesting_job_id = (uint16_t)(current_job->index);
+    hdr->requested_job_id = (uint16_t)index;
+    
+    // Send the request
+    int bytes_sent = 0;
+    while(bytes_sent < sizeof(req_edge_hdr_t)) {
+        bytes_sent += send(remote->socketfd, hdr + bytes_sent, sizeof(req_edge_hdr_t) - bytes_sent, 0);
+    }
+    
+    free(hdr);
+    
+    return 0;
+}
+
+int sendMinMax(destinationlist_t *remotenodes, int local_min, int local_max, int whoami) {
+    // Allocate a min/max header
+    min_max_hdr_t *hdr = malloc(sizeof(min_max_hdr_t));
+    
+    // Pack the header
+    hdr->packet_size = (uint32_t)sizeof(min_max_hdr_t);
+    hdr->type = HDR_SEND_MIN_MAX;
+    hdr->min = (int32_t)local_min;
+    hdr->max = (int32_t)local_max;
+
+    // Send
+    for(int i = 0; i < remotenodes->num_destinations; i++) {
+        if(i != whoami) {
+            int bytes_sent = 0;
+            while(bytes_sent < sizeof(min_max_hdr_t)) {
+                bytes_sent += send(remotenodes->destinations[i].socketfd, hdr + bytes_sent, sizeof(min_max_hdr_t) - bytes_sent, 0);
+            }
+        }
+    }
+    
+    free(hdr);
     
     return 0;
 }

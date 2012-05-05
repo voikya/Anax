@@ -45,14 +45,18 @@ struct colorscheme {
 };
 typedef struct colorscheme colorscheme_t;
 
-int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile, int suppress_output);
+int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile, int suppress_output, frame_coords_t *frame);
 void printGeotiffInfo(geotiffmap_t *map, TIFF *tiff);
 int setDefaultColors(geotiffmap_t *map, colorscheme_t **colorscheme, int isAbsolute);
 int loadColorScheme(geotiffmap_t *map, colorscheme_t **colorscheme, char *colorfile);
+int setRelativeElevations(colorscheme_t *colorscheme, int16_t max, int16_t min);
 int colorize(geotiffmap_t *map, colorscheme_t *colorscheme);
 int renderPNG(geotiffmap_t *map, char *outfile, int suppress_output);
 //void updatePNGWriteStatus(png_structp png_ptr, png_uint32 row, int pass);
 int scaleImage(geotiffmap_t **map, double scale);
 int getCorners(geotiffmap_t *map, double *top, double *bottom, double *left, double *right);
+int writeMapData(anaxjob_t *current_job, geotiffmap_t *map);
+int readMapData(anaxjob_t *current_job, geotiffmap_t **map);
+void freeMap(geotiffmap_t *map);
 
 #endif

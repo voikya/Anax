@@ -10,14 +10,14 @@
 # to 500m, the color green could be set to 20%, which will then associate the color with 100m.
 Relative
 
-# Fill in E(levation), R(ed), B(lue), and G(reen) in the table below. If elevation is absolute, specify E in meters; if relative, specify E as value between 0 and 1.
+# Fill in E(levation), R(ed), B(lue), and G(reen) in the table below. If elevation is absolute, specify E in meters; if relative, specify E as a percent between 0 and 100.
 # Specify RGB values using decimal representation; that is, numbers between 0 and 255.
 #E	R	G	B
-0.0	134	92	70
-0.15	236	211	171
-0.3	150	253	42
-0.45 49	152	2
-0.6	218	199	1
-0.75	255	74	1
-0.9	160	0	2
-1.0	116	0	3
+0	134	92	70
+15	236	211	171
+30	150	253	42
+45	49	152	2
+60	218	199	1
+75	255	74	1
+90	160	0	2
+100	116	0	3

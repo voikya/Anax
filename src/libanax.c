@@ -33,7 +33,7 @@ void SHOW_COLOR_SCHEME(colorscheme_t *colors) {
 /* END DEBUGGING FUNCTIONS */
 
 
-int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile, int suppress_output) {
+int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile, int suppress_output, frame_coords_t *frame) {
 	int err;
 	
 	// Load GTIF type from TIFF
@@ -76,11 +76,11 @@ int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile, int suppress_output) 
 	// Allocate enough memory for the entire map struct
     // (This is all done all at once to help ensure there won't be any out-of-memory
 	// errors after processing has already begun)
-	(*map)->data = malloc((*map)->height * sizeof(point_t *));
-	for(int i = 0; i < (*map)->height; i++) {
-		(*map)->data[i] = malloc((*map)->width * sizeof(point_t));
+	(*map)->data = malloc(((*map)->height + (2 * MAPFRAME)) * sizeof(point_t *));
+	for(int i = 0; i < (*map)->height + (2 * MAPFRAME); i++) {
+		(*map)->data[i] = malloc(((*map)->width + (2 * MAPFRAME)) * sizeof(point_t));
 		if((*map)->data[i] == NULL)
-			return ANAX_ERR_NO_MEMORY;	
+			return ANAX_ERR_NO_MEMORY;
 	}
 
 	// Scan GeoTIFF file for topological information and store it
@@ -98,17 +98,38 @@ int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile, int suppress_output) 
 			return ANAX_ERR_TIFF_SCANLINE;
 		double lat = bottom_lat + change_in_lat * (1.0 - ((double)row / ((double)((*map)->height) - 1.0)));
 		for(int col = 0; col < (*map)->width; col++) {
-			(*map)->data[row][col].elevation = tiff_line.data[col];
-			if((*map)->data[row][col].elevation > (*map)->max_elevation) {
-				(*map)->max_elevation = (*map)->data[row][col].elevation;
+			(*map)->data[row + MAPFRAME][col + MAPFRAME].elevation = tiff_line.data[col];
+			if((*map)->data[row + MAPFRAME][col + MAPFRAME].elevation > (*map)->max_elevation) {
+				(*map)->max_elevation = (*map)->data[row + MAPFRAME][col + MAPFRAME].elevation;
 			}
-			if((*map)->data[row][col].elevation < (*map)->min_elevation) {
-				(*map)->min_elevation = (*map)->data[row][col].elevation;
+			if((*map)->data[row + MAPFRAME][col + MAPFRAME].elevation < (*map)->min_elevation) {
+				(*map)->min_elevation = (*map)->data[row + MAPFRAME][col + MAPFRAME].elevation;
 			}
-            (*map)->data[row][col].latitude = lat;
-            (*map)->data[row][col].longitude = left_lon + change_in_lon * ((double)col / ((double)((*map)->width) - 1.0));
+            (*map)->data[row + MAPFRAME][col + MAPFRAME].latitude = lat;
+            (*map)->data[row + MAPFRAME][col + MAPFRAME].longitude = left_lon + change_in_lon * ((double)col / ((double)((*map)->width) - 1.0));
 		}
 	}
+	
+	// Set frame coordinates
+	// This code divides the frame into eight portions (N, S, E, W, NE, SE, SW, NW) and identifies
+	// what the coordinates of the midpoint of each section would be.
+	point_t *midpoint = &((*map)->data[(*map)->height / 2 + MAPFRAME][(*map)->width / 2 + MAPFRAME]);
+	double lat_step = (*map)->data[MAPFRAME + 1][MAPFRAME + 1].latitude - (*map)->data[MAPFRAME][MAPFRAME].latitude;
+	double lon_step = (*map)->data[MAPFRAME + 1][MAPFRAME + 1].longitude - (*map)->data[MAPFRAME][MAPFRAME].longitude;
+	frame->N_set = 0;
+	frame->S_set = 0;
+	frame->E_set = 0;
+	frame->W_set = 0;
+	frame->NE_set = 0;
+	frame->SE_set = 0;
+	frame->SW_set = 0;
+	frame->NW_set = 0;
+	frame->north_lat = (*map)->data[MAPFRAME][(*map)->width / 2 + MAPFRAME].latitude + ((MAPFRAME / 2.0) * lat_step);
+	frame->south_lat = (*map)->data[(*map)->height + MAPFRAME - 1][(*map)->width / 2 + MAPFRAME].latitude - ((MAPFRAME / 2.0) * lat_step);
+	frame->mid_lat = midpoint->latitude;
+	frame->west_lon = (*map)->data[(*map)->height / 2 + MAPFRAME][MAPFRAME].longitude - ((MAPFRAME / 2.0) * lon_step);
+	frame->east_lon = (*map)->data[(*map)->height / 2 + MAPFRAME][(*map)->width + MAPFRAME - 1].longitude + ((MAPFRAME / 2.0) * lon_step);
+	frame->mid_lon = midpoint->longitude;
 
 	if(!suppress_output)
 		printGeotiffInfo(*map, tiff);
@@ -193,26 +214,27 @@ int loadColorScheme(geotiffmap_t *map, colorscheme_t **colorscheme, char *colorf
             (*colorscheme)->colors[(*colorscheme)->num_stops].color.a = 1.0;
         }
     } else if((*colorscheme)->isAbsolute == ANAX_RELATIVE_COLORS) {
-        int16_t min = (map == NULL) ? 0 : map->min_elevation;
-        int16_t max = (map == NULL) ? 0 : map->max_elevation;
+        int16_t min = map->min_elevation;
+        int16_t max = map->max_elevation;
         while(fgets(buf, BUFSIZE, fp)) {
             if(buf[0] == '#' || buf[0] == '\n' || buf[0] == ' ')
                 continue;
-            double e;
-            int r, g, b;
-            int res = sscanf(buf, "%lf %i %i %i", &e, &r, &g, &b);
+            int e, r, g, b;
+            int res = sscanf(buf, "%i %i %i %i", &e, &r, &g, &b);
             if(res != 4)
                 return ANAX_ERR_INVALID_COLOR_FILE;
             (*colorscheme)->num_stops++;
             (*colorscheme)->colors = realloc((*colorscheme)->colors, ((*colorscheme)->num_stops + 2) * sizeof(colorstop_t));
             if(!(*colorscheme)->colors)
                 return ANAX_ERR_NO_MEMORY;
-            (*colorscheme)->colors[(*colorscheme)->num_stops].elevation = (int)(((max - min) * e) + min);
+            (*colorscheme)->colors[(*colorscheme)->num_stops].elevation = e;
             (*colorscheme)->colors[(*colorscheme)->num_stops].color.r = r;
             (*colorscheme)->colors[(*colorscheme)->num_stops].color.g = g;
             (*colorscheme)->colors[(*colorscheme)->num_stops].color.b = b;
             (*colorscheme)->colors[(*colorscheme)->num_stops].color.a = 1.0;
         }
+        
+        setRelativeElevations(*colorscheme, max, min);
     }
 
     (*colorscheme)->colors[0].elevation = (*colorscheme)->colors[1].elevation;
@@ -229,9 +251,21 @@ int loadColorScheme(geotiffmap_t *map, colorscheme_t **colorscheme, char *colorf
 	return 0;
 }
 
+int setRelativeElevations(colorscheme_t *colorscheme, int16_t max, int16_t min) {
+    for(int i = 1; i <= colorscheme->num_stops; i++) {
+        double e = (double)(colorscheme->colors[i].elevation) / 100.0;
+        colorscheme->colors[i].elevation = (int)(((max - min) * e) + min);
+    }
+    
+    colorscheme->colors[0].elevation = colorscheme->colors[1].elevation;
+    colorscheme->colors[colorscheme->num_stops + 1].elevation = colorscheme->colors[colorscheme->num_stops].elevation;
+    
+    return 0;
+}
+
 int colorize(geotiffmap_t *map, colorscheme_t *colorscheme) {
-	for(int i = 0; i < map->height; i++) {
-		for(int j = 0; j < map->width; j++) {
+	for(int i = MAPFRAME; i < map->height + MAPFRAME; i++) {
+		for(int j = MAPFRAME; j < map->width + MAPFRAME; j++) {
 			int stop = 0;
 			for(int n = 1; n <= colorscheme->num_stops; n++) {
 				if(colorscheme->colors[n].elevation <= map->data[i][j].elevation) {
@@ -274,7 +308,7 @@ int scaleImage(geotiffmap_t **map, double scale) {
 	newmap->width = (int)((double)(*map)->width * scale);
 	
 	// Calculate the step size
-	// (i.e., how many old pixels one new pixel corresponds to; adjusted so as always to be odd)
+	// (i.e., how many old pixels one new pixel corresponds to)
 	double step_vert = (double)((*map)->height) / (double)(newmap->height);
 	double step_horiz = (double)((*map)->height) / (double)(newmap->height);
 	//int16_t step_vert = (*map)->height / newmap->height;
@@ -283,9 +317,9 @@ int scaleImage(geotiffmap_t **map, double scale) {
 	//step_horiz += (step_horiz % 2 == 0) ? 1 : 0;
 
 	// Allocate enough memory for the entire map struct
-	newmap->data = malloc((*map)->height * sizeof(point_t *));
-	for(int i = 0; i < (*map)->height; i++) {
-		newmap->data[i] = malloc((*map)->width * sizeof(point_t));
+	newmap->data = malloc((newmap->height + (2 * MAPFRAME)) * sizeof(point_t *));
+	for(int i = 0; i < newmap->height + (2 * MAPFRAME); i++) {
+		newmap->data[i] = malloc((newmap->width + (2 * MAPFRAME)) * sizeof(point_t));
 		if(newmap->data[i] == NULL)
 			return ANAX_ERR_NO_MEMORY;
 	}
@@ -299,12 +333,18 @@ int scaleImage(geotiffmap_t **map, double scale) {
 			memset(box, 0, step_vert * step_horiz * sizeof(int16_t));
 
 			// Set up the box
-			int16_t box_firstrow = (int)((r * step_vert) - ((step_vert - 1) / 2));
-			int16_t box_firstcol = (int)((c * step_horiz) - ((step_horiz - 1) / 2));
+			int16_t box_firstrow = (int)((r * step_vert) - ((step_vert - 1) / 2) + MAPFRAME);
+			int16_t box_firstcol = (int)((c * step_horiz) - ((step_horiz - 1) / 2) + MAPFRAME);
 			long int sum = 0;
 			int cellcount = 0;
 			for(int boxr = 0; boxr < (int)step_vert; boxr++) {
 				for(int boxc = 0; boxc < (int)step_horiz; boxc++) {
+					box[boxr][boxc] = (*map)->data[box_firstrow + boxr][box_firstcol + boxc].elevation;
+					if(box[boxr][boxc] != -9999) {
+					    sum += box[boxr][boxc];
+					    cellcount++;
+					}
+					/*
 					if((box_firstrow + boxr >= 0) && (box_firstcol + boxc >= 0) && (box_firstrow + boxr < (*map)->height) && (box_firstcol + boxc < (*map)->width)) {
 						box[boxr][boxc] = (*map)->data[box_firstrow + boxr][box_firstcol + boxc].elevation;
 						sum += box[boxr][boxc];
@@ -312,13 +352,48 @@ int scaleImage(geotiffmap_t **map, double scale) {
 					} else {
 						box[boxr][boxc] = -9999;
 					}
+					*/
+				}
+			}
+
+			// Average the elevation and save the value
+			newmap->data[r + MAPFRAME][c + MAPFRAME].elevation = sum / cellcount;
+		}
+	}
+
+/*	// Scale the image
+	for(int r = MAPFRAME; r < newmap->height + MAPFRAME; r++) {
+		for(int c = MAPFRAME; c < newmap->width + MAPFRAME; c++) {
+			memset(box, 0, step_vert * step_horiz * sizeof(int16_t));
+
+			// Set up the box
+			int16_t box_firstrow = (int)((r * step_vert) - ((step_vert - 1) / 2));
+			int16_t box_firstcol = (int)((c * step_horiz) - ((step_horiz - 1) / 2));
+			long int sum = 0;
+			int cellcount = 0;
+			for(int boxr = 0; boxr < (int)step_vert; boxr++) {
+				for(int boxc = 0; boxc < (int)step_horiz; boxc++) {
+					box[boxr][boxc] = (*map)->data[box_firstrow + boxr][box_firstcol + boxc].elevation;
+					if(box[boxr][boxc] != -9999) {
+					    sum += box[boxr][boxc];
+					    cellcount++;
+					}
+					
+					if((box_firstrow + boxr >= 0) && (box_firstcol + boxc >= 0) && (box_firstrow + boxr < (*map)->height) && (box_firstcol + boxc < (*map)->width)) {
+						box[boxr][boxc] = (*map)->data[box_firstrow + boxr][box_firstcol + boxc].elevation;
+						sum += box[boxr][boxc];
+						cellcount++;
+					} else {
+						box[boxr][boxc] = -9999;
+					}
+					
 				}
 			}
 
 			// Average the elevation and save the value
 			newmap->data[r][c].elevation = sum / cellcount;
 		}
-	}
+	}*/
 
 	// Copy over metadata from the old map struct that has not changed
 	newmap->name = calloc(strlen((*map)->name) + 1, sizeof(char));
@@ -327,13 +402,7 @@ int scaleImage(geotiffmap_t **map, double scale) {
 	newmap->min_elevation = (*map)->min_elevation;
 
 	// Free the old map struct and return the new one
-	for(int i = 0; i < (*map)->height; i++) {
-		free((*map)->data[i]);
-	}
-	free((*map)->data);
-	free((*map)->name);
-	free(*map);
-
+	freeMap(*map);
 	*map = newmap;
 
 	return 0;
@@ -395,9 +464,9 @@ int renderPNG(geotiffmap_t *map, char *outfile, int suppress_output) {
 	// Write the PNG
 	double percent_interval = (double)map->height / 100.0;
 	png_byte *row_pointer = calloc(map->width, 4 * (bit_depth / 8));
-	for(int i = 0; i < map->height; i++) {
+	for(int i = MAPFRAME; i < map->height + MAPFRAME; i++) {
 		int pos = 0;
-		for(int j = 0; j < map->width; j++) {
+		for(int j = MAPFRAME; j < map->width + MAPFRAME; j++) {
 			row_pointer[pos] = (char)(map->data[i][j].color.r);
 			row_pointer[pos + 1] = (char)(map->data[i][j].color.g);
 			row_pointer[pos + 2] = (char)(map->data[i][j].color.b);
@@ -409,11 +478,11 @@ int renderPNG(geotiffmap_t *map, char *outfile, int suppress_output) {
 
 		if(!suppress_output) {
 			if((int)percent_interval > 0) {
-				if(i % (int)percent_interval == 0) {
-					printf("%i%%\n", (int)(i / percent_interval) + 1);
+				if((i - MAPFRAME) % (int)percent_interval == 0) {
+					printf("%i%%\n", (int)((i - MAPFRAME) / percent_interval) + 1);
 				}
 			} else {
-				printf("%i%%\n", (i * 100) / (int)map->height);
+				printf("%i%%\n", ((i - MAPFRAME) * 100) / (int)map->height);
 			}
 		}
 	}
@@ -434,6 +503,78 @@ int getCorners(geotiffmap_t *map, double *top, double *bottom, double *left, dou
     *right = map->data[map->height - 1][map->width - 1].longitude;
     
     return 0;
+}
+
+int writeMapData(anaxjob_t *current_job, geotiffmap_t *map) {
+    FILE *fp = fopen(current_job->outfile, "w+");
+    
+    uint32_t hdr[4];
+    hdr[0] = map->height;
+    hdr[1] = map->width;
+    hdr[2] = map->max_elevation;
+    hdr[3] = map->min_elevation;
+    fwrite(hdr, sizeof(uint32_t), 4, fp);
+    
+    int bufsize = map->width + (2 * MAPFRAME);
+    int16_t buf[bufsize];
+    for(int i = 0; i < map->height + (2 * MAPFRAME); i++) {
+        for(int j = 0; j < map->width + (2 * MAPFRAME); j++) {
+            buf[j] = map->data[i][j].elevation;
+            fwrite(buf, sizeof(int16_t), bufsize, fp);
+        }
+    }
+    
+    freeMap(map);
+    
+    fclose(fp);
+    
+    return 0;
+}
+
+int readMapData(anaxjob_t *current_job, geotiffmap_t **map) {
+    FILE *fp = fopen(current_job->outfile, "r");
+
+	// Allocate main map struct
+	*map = malloc(sizeof(geotiffmap_t));
+
+    // Load data into main map struct
+    uint32_t hdr[4];
+    fread(hdr, sizeof(uint32_t), 4, fp);
+    (*map)->name = current_job->name;
+    (*map)->height = (int)hdr[0];
+    (*map)->width = (int)hdr[1];
+    (*map)->max_elevation = (int16_t)hdr[2];
+    (*map)->min_elevation = (int16_t)hdr[3];
+
+    // Allocate map data array
+	(*map)->data = malloc((*map)->height * sizeof(point_t *));
+	for(int i = 0; i < (*map)->height + MAPFRAME; i++) {
+		(*map)->data[i] = malloc(((*map)->width + MAPFRAME) * sizeof(point_t));
+		if((*map)->data[i] == NULL)
+			return ANAX_ERR_NO_MEMORY;
+	}
+	
+	// Read map data from the file and store it
+	int bufsize = (*map)->width + (2 * MAPFRAME);
+	int16_t buf[bufsize];
+	for(int i = 0; i < (*map)->height + (2 * MAPFRAME); i++) {
+	    for(int j = 0; j < (*map)->width + (2 * MAPFRAME); j++) {
+	        fread(buf, sizeof(int16_t), bufsize, fp);
+	        (*map)->data[i][j].elevation = buf[j];
+	    }
+	}
+	
+	fclose(fp);
+	
+	return 0;
+}
+
+void freeMap(geotiffmap_t *map) {
+    for(int i = 0; i < map->height; i++) {
+        free(map->data[i]);
+    }
+    free(map->data);
+    free(map);
 }
 
 //void updatePNGWriteStatus(png_structp png_ptr, png_uint32 row, int pass);

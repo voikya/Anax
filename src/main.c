@@ -28,7 +28,6 @@ int main(int argc, char *argv[]) {
 	int oflag = 0;
 	int qflag = 0;
 	int sflag = 0;
-	char *srcfile = calloc(FILENAME_MAX, sizeof(char));
 	char *outfile = NULL;
 	char *colorfile = NULL;
 	char *addrfile = NULL;
@@ -80,7 +79,6 @@ int main(int argc, char *argv[]) {
 		joblist->jobs[joblist->num_jobs - 1].name = argv[i];
 		joblist->jobs[joblist->num_jobs - 1].index = i;
 		joblist->jobs[joblist->num_jobs - 1].status = ANAX_STATE_PENDING;
-		joblist->jobs[joblist->num_jobs - 1].thread = NULL;
 	}
 	if(joblist->num_jobs == 0 && !lflag) {
 		fprintf(stderr, "Error: Source file(s) must be specified\n");
@@ -113,39 +111,37 @@ int main(int argc, char *argv[]) {
 	}
 
 	if(dflag) {
-		// Handle distributed rendering
-		
-		// Set up locks
-		pthread_mutex_init(&ready_mutex, NULL);
-		pthread_cond_init(&ready_cond, NULL);
-
-		// Load the destinations array
-		destinationlist_t *destinationlist;
-		err = loadDestinationList(addrfile, &destinationlist);
-		
-		// Initialize connections to each remote host
-		for(int i = 0; i < destinationlist->num_destinations; i++) {
-		    err = connectToRemoteHost(&(destinationlist->destinations[i]));
-		    destinationlist->destinations[i].status = ANAX_STATE_NOJOB;
-		}
-		
-		// Initialize color scheme
-        colorscheme_t *colorscheme;
-        if(cflag) {
-            loadColorScheme(NULL, &colorscheme, colorfile);
-        } else {
-            setDefaultColors(NULL, &colorscheme, ANAX_RELATIVE_COLORS);
-        }
-        
-        // Break if the color scheme is relative (this does not make sense when dealing with multiple files)
-		if(colorscheme->isAbsolute == ANAX_RELATIVE_COLORS) {
-		    fprintf(stderr, "Error: Distributed rendering is only possible with an absolute color scheme\n");
-		    exit(ANAX_ERR_INVALID_COLOR_FILE);
-		}
-		
-		// Send out initial jobs
-		err = distributeJobs(destinationlist, joblist, colorscheme, scale);
-		
+	    // Handle distributed rendering
+	    
+	    // Set up locks
+	    pthread_mutex_init(&ready_mutex, NULL);
+	    pthread_cond_init(&ready_cond, NULL);
+	    
+	    // Load the destinations array
+	    destinationlist_t *destinationlist;
+	    err = loadDestinationList(addrfile, &destinationlist);
+	    
+	    // Initialize connections to each remote host
+	    for(int i = 0; i < destinationlist->num_destinations; i++) {
+	        err = connectToRemoteHost(&(destinationlist->destinations[i]), REMOTE_PORT);
+	    }
+	    
+	    // Initialize color scheme
+	    colorscheme_t *colorscheme;
+	    if(cflag) {
+	        loadColorScheme(NULL, &colorscheme, colorfile);
+	    } else {
+	        setDefaultColors(NULL, &colorscheme, ANAX_RELATIVE_COLORS);
+	    }
+	    
+	    // Send each remote node the colorscheme, scale, and remote node list
+	    for(int i = 0; i < destinationlist->num_destinations; i++) {
+	        err = initRemoteHosts(destinationlist, colorscheme, scale);
+	    }
+	    
+	    // Send out initial jobs
+	    err = distributeJobs(destinationlist, joblist);
+	    
 		// Send out later jobs as remote nodes free up
 		int completed = 0;
 		while(completed < joblist->num_jobs) {
@@ -156,7 +152,7 @@ int main(int argc, char *argv[]) {
 		    completed = countComplete(joblist);
 		    pthread_mutex_unlock(&ready_mutex);
 		    
-		    err = distributeJobs(destinationlist, joblist, colorscheme, scale);
+		    err = distributeJobs(destinationlist, joblist);
 		}
 		
 		pthread_mutex_destroy(&ready_mutex);
@@ -164,7 +160,7 @@ int main(int argc, char *argv[]) {
 		
 		// Wait for all threads to terminate
 		for(int i = 0; i < joblist->num_jobs; i++) {
-		    pthread_join(joblist->jobs[i].thread, NULL);
+		    pthread_join(destinationlist->destinations[i].thread, NULL);
 		}
 		
     } else if(lflag) {
@@ -173,43 +169,152 @@ int main(int argc, char *argv[]) {
         // Network setup
         int socketfd, outsocketfd;
         err = initRemoteListener(&socketfd);
-        
-        // Receive header data
         struct sockaddr_in clientAddr;
         socklen_t sinSize = sizeof(struct sockaddr_in);
         outsocketfd = accept(socketfd, (struct sockaddr *)&clientAddr, &sinSize);
         
+        // Receive and set up colorscheme and scale
+        int whoami;
+        int local_max = INT16_MIN;
+        int local_min = INT16_MAX;
+        int global_max = INT16_MIN;
+        int global_min = INT16_MAX;
+        colorscheme_t *colorscheme;
+        double scale;
+        getInitHeaderData(outsocketfd, &whoami, &colorscheme, &scale);
+        
+        // Receive and set up a list of all remote nodes
+        destinationlist_t *remotenodes;
+        getNodesHeaderData(outsocketfd, &remotenodes);
+        
+        // Set up a list for local jobs
+        joblist_t *localjobs = malloc(sizeof(joblist_t));
+        localjobs->num_jobs = 0;
+        localjobs->jobs = NULL;
+        
+        // Download and process GeoTIFF files
         while(1) {
-            char *filename;
-            colorscheme_t *colorscheme;
-            double scale;
-            getHeaderData(outsocketfd, &filename, &colorscheme, &scale);
+            // Create a local copy of the GeoTIFF
+            err = getGeoTIFF(outsocketfd, localjobs);
+            if(err == ANAX_ERR_NO_MAP)
+                break;
+            anaxjob_t *current_job = &(localjobs->jobs[localjobs->num_jobs - 1]);
             
-            // Get image data
-            if(strstr(filename, "http://") == NULL) {
-                // Local file, must request transfer from originating node
-                getImageFromPrimary(outsocketfd, filename);
-            } else {
-                // Remote file, must be downloaded
-                downloadImage(filename);
-            }
-    
-            // Open TIFF file
-            char *filename_without_path = strrchr(filename, '/');
-            filename_without_path = (filename_without_path == NULL) ? 0 : filename_without_path + 1;
-            char srcfile[strlen(filename_without_path) + 6];
-            sprintf(srcfile, "/tmp/%s", filename_without_path);
-            TIFF *srctiff = XTIFFOpen(srcfile, "r");
+            // Open the file
+            TIFF *srctiff = XTIFFOpen(current_job->outfile, "r");
             if(srctiff == NULL) {
-                fprintf(stderr, "Error: No such file: %s\n", srcfile);
+                fprintf(stderr, "Error: No such file: %s\n", current_job->outfile);
                 exit(ANAX_ERR_FILE_DOES_NOT_EXIST);
             }
-            char outfile[strlen(srcfile) + 1];
-            strcpy(outfile, srcfile);
-            outfile[strlen(srcfile)] = 0;
-            outfile[strlen(srcfile) - 1] = 'g';
-            outfile[strlen(srcfile) - 2] = 'n';
-            outfile[strlen(srcfile) - 3] = 'p';
+            
+            // Set the new name for the outfile (TMP)
+            current_job->outfile = realloc(current_job->outfile, 20);
+            sprintf(current_job->outfile, "/tmp/map%i.tmp", current_job->index);
+            
+            // Load data from GeoTIFF
+            geotiffmap_t *map;
+            frame_coords_t *frame = malloc(sizeof(frame_coords_t));
+            err = initMap(&map, srctiff, current_job->name, 0, frame);
+            if(err)
+                exit(err);
+            XTIFFClose(srctiff);
+            
+            // Store frame coordinates (to be used when requesting frame data from other nodes)
+            memcpy(&(current_job->frame_coordinates), frame, sizeof(frame_coords_t));
+            free(frame);
+            
+            // Get periphery
+            getCorners(map, &(current_job->top_lat), &(current_job->bottom_lat), &(current_job->left_lon), &(current_job->right_lon));
+            
+            // Set LOADED status and alert other nodes
+            current_job->status = ANAX_STATE_LOADED;
+            sendStatusUpdate(outsocketfd, remotenodes, current_job, whoami);
+            
+            // Update local elevation extreme variables
+            local_max = (map->max_elevation > local_max) ? map->max_elevation : local_max;
+            local_min = (map->min_elevation < local_min) ? map->min_elevation : local_min;
+            
+            // Write the map data to a temporary file
+            writeMapData(current_job, map);
+        }
+        
+        // Alert all other nodes that this node has received all files
+        sendStatusUpdate(outsocketfd, remotenodes, NULL, whoami);
+        
+        // If the colorscheme is relative, alert other nodes of this node's min and max
+        if(colorscheme->isAbsolute == ANAX_RELATIVE_COLORS) {
+            sendMinMax(remotenodes, local_min, local_max, whoami);
+        }
+        
+        // Check for neighboring images amongst local tiles
+        for(int i = 0; i < localjobs->num_jobs; i++) {
+            queryForMapFrameLocal(&(localjobs->jobs[i]), localjobs);
+        }
+        
+        // Query other nodes for frame information
+        int done = 0;
+        while(!done) {
+            for(int i = 0; i < localjobs->num_jobs; i++) {
+                if(localjobs->jobs[i].status == ANAX_STATE_LOADED) {
+                    queryForMapFrame(&(localjobs->jobs[i]), remotenodes);
+                }
+                
+                // Check if all remote jobs have received all the jobs they are going to get
+                // at the start of this loop; if so, break out of the while loop at the
+                // conclusion of this for loop
+                if(i == 0) {
+                    int count = 0;
+                    for(int c = 0; c < remotenodes->num_destinations; c++) {
+                        count = (remotenodes->destinations[c].status == ANAX_STATE_RENDERING) ? count + 1 : count;
+                    }
+                    done = (count == remotenodes->num_destinations - 1) ? 1 : 0;
+                }
+            }
+            
+            sleep(2);
+        }
+        
+        // If the colorscheme is relative, update it with the appropriate scale
+        if(colorscheme->isAbsolute == ANAX_RELATIVE_COLORS) {
+            global_max = (local_max > global_max) ? local_max : global_max;
+            global_min = (local_min < global_min) ? local_min : global_min;
+            setRelativeElevations(colorscheme, global_max, global_min);
+        }
+        
+        // Render all local maps
+        // (skipping temporarily if a map is still waiting on a frame response from another node)
+        int rendered = 0;
+        while(rendered < localjobs->num_jobs) {
+            for(int i = 0; i < localjobs->num_jobs; i++) {
+                anaxjob_t *current_job = &(localjobs->jobs[i]);
+                if(current_job->status == ANAX_STATE_RENDERING) {
+                    // Load the map
+                    geotiffmap_t *map;
+                    readMapData(current_job, &map);
+                    sprintf(current_job->outfile + strlen(current_job->outfile) - 3, "png");
+                    
+                    // Scale
+                    if(scale != 1.0)
+                        scaleImage(&map, scale);
+                    
+                    // Colorize
+                    colorize(map, colorscheme);
+                    
+                    // Render
+                    renderPNG(map, current_job->outfile, 0);
+                
+                    // Update local and remote state
+                    rendered++;
+                    current_job->status = ANAX_STATE_COMPLETE;
+                    sendStatusUpdate(outsocketfd, remotenodes, current_job, whoami);
+                }
+            }
+        }
+    
+
+/*
+        // Handle receipt of distributed rendering job
+
     
             // Load data from GeoTIFF
             geotiffmap_t *map;
@@ -237,14 +342,17 @@ int main(int argc, char *argv[]) {
             
             // Return PNG to primary node
             returnPNG(outsocketfd, outfile);
-        }        
+        }
+*/
 	} else {
 	    // Handle local rendering
+
 	    for(int i = 0; i < joblist->num_jobs; i++) {
 
             ////// The following code is temporary
             ////// Remove it once proper stitching is implemented
             char cwd[FILENAME_MAX];
+            char srcfile[FILENAME_MAX];
             getcwd(cwd, FILENAME_MAX);
             sprintf(outfile, "%s/out%i.png", cwd, i);
             strcpy(srcfile, joblist->jobs[i].name);
@@ -259,7 +367,8 @@ int main(int argc, char *argv[]) {
     
             // Load data from GeoTIFF
             geotiffmap_t *map;
-            err = initMap(&map, srctiff, srcfile, qflag);
+            frame_coords_t *frame = malloc(sizeof(frame_coords_t));
+            err = initMap(&map, srctiff, srcfile, qflag, frame);
             if(err)
                 exit(err);
             
