@@ -138,7 +138,7 @@ int initRemoteHosts(destinationlist_t *destinationlist, colorscheme_t *colorsche
     hdr2->num_nodes = (uint16_t)(destinationlist->num_destinations);
     
     // Pack the node addresses after the header
-    uint8_t *cur_pos = packet + sizeof(nodes_hdr_t);
+    uint8_t *cur_pos = packet2 + sizeof(nodes_hdr_t);
     for(int i = 0; i < destinationlist->num_destinations; i++) {
         uint16_t len = strlen(destinationlist->destinations[i].addr);
         memcpy(cur_pos, &len, 2);
@@ -534,7 +534,17 @@ int getInitHeaderData(int outsocket, int *whoami, colorscheme_t **colorscheme, d
         (*colorscheme)->isAbsolute = (int)(hdr->is_abs);
         (*colorscheme)->num_stops = (int)(hdr->num_colors);
         (*colorscheme)->colors = calloc(hdr->num_colors + 2, sizeof(colorstop_t));
-        
+
+        uint8_t *coloroffset = buf + sizeof(init_hdr_t);
+        compressed_color_t *colors = (compressed_color_t *)coloroffset;
+        for(int i = 0; i < hdr->num_colors; i++) {
+            (*colorscheme)->colors[i + 1].elevation = (int16_t)(colors[i].elevation);
+            (*colorscheme)->colors[i + 1].color.r = (int)(colors[i].red);
+            (*colorscheme)->colors[i + 1].color.g = (int)(colors[i].green);
+            (*colorscheme)->colors[i + 1].color.b = (int)(colors[i].blue);
+        }
+
+/*
         uint8_t *coloroffset = buf + sizeof(init_hdr_t);
         for(int i = 1; i <= hdr->num_colors; i++) {
             compressed_color_t *color = (compressed_color_t *)coloroffset + ((i - 1) * sizeof(compressed_color_t));
@@ -543,6 +553,7 @@ int getInitHeaderData(int outsocket, int *whoami, colorscheme_t **colorscheme, d
             (*colorscheme)->colors[i].color.g = (int)(color->green);
             (*colorscheme)->colors[i].color.b = (int)(color->blue);
         }
+*/
         memcpy(&((*colorscheme)->colors[0]), &((*colorscheme)->colors[1]), sizeof(colorstop_t));
         memcpy(&((*colorscheme)->colors[(*colorscheme)->num_stops + 1]), &((*colorscheme)->colors[(*colorscheme)->num_stops]), sizeof(colorstop_t));
     }

@@ -59,4 +59,7 @@ int writeMapData(anaxjob_t *current_job, geotiffmap_t *map);
 int readMapData(anaxjob_t *current_job, geotiffmap_t **map);
 void freeMap(geotiffmap_t *map);
 
+void SHOW_DATA_AT_POINT(geotiffmap_t *map, int r, int c);
+void SHOW_COLOR_SCHEME(colorscheme_t *colors);
+
 #endif

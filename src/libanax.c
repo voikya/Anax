@@ -558,8 +558,9 @@ int readMapData(anaxjob_t *current_job, geotiffmap_t **map) {
 	int bufsize = (*map)->width + (2 * MAPFRAME);
 	int16_t buf[bufsize];
 	for(int i = 0; i < (*map)->height + (2 * MAPFRAME); i++) {
+	    fread(buf, sizeof(int16_t), bufsize, fp);
 	    for(int j = 0; j < (*map)->width + (2 * MAPFRAME); j++) {
-	        fread(buf, sizeof(int16_t), bufsize, fp);
+	        //fread(buf, sizeof(int16_t), bufsize, fp);
 	        (*map)->data[i][j].elevation = buf[j];
 	    }
 	}
