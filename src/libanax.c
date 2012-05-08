@@ -214,8 +214,6 @@ int loadColorScheme(geotiffmap_t *map, colorscheme_t **colorscheme, char *colorf
             (*colorscheme)->colors[(*colorscheme)->num_stops].color.a = 1.0;
         }
     } else if((*colorscheme)->isAbsolute == ANAX_RELATIVE_COLORS) {
-        int16_t min = map->min_elevation;
-        int16_t max = map->max_elevation;
         while(fgets(buf, BUFSIZE, fp)) {
             if(buf[0] == '#' || buf[0] == '\n' || buf[0] == ' ')
                 continue;
@@ -233,8 +231,6 @@ int loadColorScheme(geotiffmap_t *map, colorscheme_t **colorscheme, char *colorf
             (*colorscheme)->colors[(*colorscheme)->num_stops].color.b = b;
             (*colorscheme)->colors[(*colorscheme)->num_stops].color.a = 1.0;
         }
-        
-        setRelativeElevations(*colorscheme, max, min);
     }
 
     (*colorscheme)->colors[0].elevation = (*colorscheme)->colors[1].elevation;
