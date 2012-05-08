@@ -415,6 +415,8 @@ int main(int argc, char *argv[]) {
             } else {
                 setDefaultColors(map, &colorscheme, ANAX_RELATIVE_COLORS);
             }
+            if(colorscheme->isAbsolute == ANAX_RELATIVE_COLORS)
+                setRelativeElevations(colorscheme, map->max_elevation, map->min_elevation);
             colorize(map, colorscheme);
     
             // Close TIFF
