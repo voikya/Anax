@@ -12,6 +12,7 @@
 #define ANAX_ERR_COULD_NOT_RESOLVE_ADDR				-7
 #define ANAX_ERR_COULD_NOT_CONNECT					-8
 #define ANAX_ERR_NO_MAP                             -9
+#define ANAX_ERR_INVALID_HEADER                     -10
 
 #define ANAX_RELATIVE_COLORS						0
 #define ANAX_ABSOLUTE_COLORS						1

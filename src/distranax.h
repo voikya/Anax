@@ -25,6 +25,10 @@
 #define PACKET_IS_EMPTY         0x03
 
 
+/////
+// PTHREAD ARGUMENT STRUCTS
+/////
+
 struct thread_arguments {
     destination_t *dest;
     uint8_t *init_pkt;
@@ -34,8 +38,20 @@ struct thread_arguments {
 };
 typedef struct thread_arguments threadarg_t;
 
+struct share_arguments {
+    destinationlist_t *remotenodes;
+    joblist_t *localjobs;
+    int *global_max;
+    int *global_min;
+    int whoami;
+    int socket;
+};
+typedef struct share_arguments threadshare_t;
 
 
+/////
+// HEADER STRUCTS
+/////
 
 struct header_initialization {
     uint32_t packet_size;
@@ -108,9 +124,10 @@ struct header_send_edge {
     uint32_t packet_size;
     uint8_t type; // HDR_SEND_EDGE
     uint8_t part; // ANAX_MAP_*
+    uint16_t datasize;
     uint16_t requesting_job_id;
     uint16_t requested_job_id;
-    uint8_t fill[6];
+    uint8_t fill[4];
     // Followed by data array
 };
 typedef struct header_send_edge send_edge_hdr_t;
@@ -146,6 +163,10 @@ struct header {
     double scale;
 };
 
+/////
+// FUNCTION DECLARATIONS
+/////
+
 void *get_in_addr(struct sockaddr *sa);
 int loadDestinationList(char *destfile, destinationlist_t **destinations);
 int connectToRemoteHost(destination_t *dest, char *port);
@@ -153,7 +174,7 @@ int initRemoteHosts(destinationlist_t *destinationlist, colorscheme_t *colorsche
 int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist);
 void *runRemoteNode(void *argt);
 void *runRemoteJob(void *argt);
-int initRemoteListener(int *socketfd);
+int initRemoteListener(int *socketfd, char *port);
 int getInitHeaderData(int outsocket, int *whoami, colorscheme_t **colorscheme, double *scale);
 int getNodesHeaderData(int outsocket, destinationlist_t **remotenodes);
 int getGeoTIFF(int outsocket, joblist_t *localjobs);
@@ -164,8 +185,11 @@ int queryForMapFrameLocal(anaxjob_t *current_job, joblist_t *localjobs);
 int queryForMapFrame(anaxjob_t *current_job, destinationlist_t *remotenodes);
 int requestMapFrame(anaxjob_t *current_job, destination_t *remote, int index, int request);
 int sendMinMax(destinationlist_t *remotenodes, int local_min, int local_max, int whoami);
+void *spawnShareThread(void *argt);
+void *handleSharing(void *argt);
 int returnPNG(int outsocket, char *filename);
 int countComplete(joblist_t *joblist);
+int countJobless(destinationlist_t *dests);
 int sendCorners(int outsocketfd, double top, double bottom, double left, double right);
 
 #endif

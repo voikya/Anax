@@ -520,8 +520,8 @@ int writeMapData(anaxjob_t *current_job, geotiffmap_t *map) {
     for(int i = 0; i < map->height + (2 * MAPFRAME); i++) {
         for(int j = 0; j < map->width + (2 * MAPFRAME); j++) {
             buf[j] = map->data[i][j].elevation;
-            fwrite(buf, sizeof(int16_t), bufsize, fp);
         }
+        fwrite(buf, sizeof(int16_t), bufsize, fp);
     }
     
     freeMap(map);
@@ -547,9 +547,9 @@ int readMapData(anaxjob_t *current_job, geotiffmap_t **map) {
     (*map)->min_elevation = (int16_t)hdr[3];
 
     // Allocate map data array
-	(*map)->data = malloc((*map)->height * sizeof(point_t *));
-	for(int i = 0; i < (*map)->height + MAPFRAME; i++) {
-		(*map)->data[i] = malloc(((*map)->width + MAPFRAME) * sizeof(point_t));
+	(*map)->data = malloc(((*map)->height + (2 * MAPFRAME)) * sizeof(point_t *));
+	for(int i = 0; i < (*map)->height + (2 * MAPFRAME); i++) {
+		(*map)->data[i] = malloc(((*map)->width + (2 * MAPFRAME)) * sizeof(point_t));
 		if((*map)->data[i] == NULL)
 			return ANAX_ERR_NO_MEMORY;
 	}

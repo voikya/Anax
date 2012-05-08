@@ -80,7 +80,6 @@ int connectToRemoteHost(destination_t *dest, char *port) {
 	for(p = servinfo; p != NULL; p = p->ai_next) {
 		if((socketfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
 			continue;
-
 		if(connect(socketfd, p->ai_addr, p->ai_addrlen) == -1) {
 			close(socketfd);
 			continue;
@@ -187,13 +186,14 @@ int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist) {
                 pthread_cond_signal(&(destinationlist->destinations[i].ready_cond));
                 pthread_mutex_unlock(&(destinationlist->destinations[i].ready_mutex));
                 
-                printf("Assigning %s to %s.", joblist->jobs[j].name, destinationlist->destinations[i].addr);
+                printf("Assigning %s to %s.\n", joblist->jobs[j].name, destinationlist->destinations[i].addr);
                 
                 break;
             }
             
             // If there are no more jobs available, let the thread know it is done
             if(destinationlist->destinations[i].status == ANAX_STATE_NOJOB) {
+                printf("Sending termination message to %s.\n", destinationlist->destinations[i].addr);
                 pthread_mutex_lock(&(destinationlist->destinations[i].ready_mutex));
                 destinationlist->destinations[i].complete = 1;
                 destinationlist->destinations[i].ready = 1;
@@ -315,49 +315,49 @@ void *runRemoteNode(void *argt) {
             
             fclose(fp);
         }
-        
-        // Send an empty tiff header to alert the remote node that there are no more tiffs
-        tiff_hdr_t *hdr = calloc(sizeof(tiff_hdr_t), sizeof(uint8_t));
-        hdr->packet_size = (uint32_t)sizeof(tiff_hdr_t);
-        hdr->type = HDR_TIFF;
-        hdr->contents = PACKET_IS_EMPTY;
-        bytes_sent = 0;
-        while(bytes_sent < sizeof(tiff_hdr_t)) {
-            bytes_sent += send(destination->socketfd, hdr, sizeof(tiff_hdr_t) - bytes_sent, 0);
-        }
-                
-        free(outbuf);
-        
-        // Handle LOADED, COMPLETE, and NOJOB status updates from remote
-        int has_job = 1;
-        while(has_job) {
-            status_change_hdr_t buf;
-            int bytes_rcvd = 0;
-            while(bytes_rcvd < sizeof(status_change_hdr_t)) {
-                bytes_rcvd += recv(destination->socketfd, &buf + bytes_rcvd, sizeof(status_change_hdr_t) - bytes_rcvd, 0);
-            }
-            if(buf.type == HDR_STATUS_CHANGE) {
-                switch(buf.status) {
-                    case ANAX_STATE_LOADED:
-                        destination->status = ANAX_STATE_LOADED;
-                        newjob->status = ANAX_STATE_LOADED;
-                        break;
-                    case ANAX_STATE_COMPLETE:
-                        destination->status = ANAX_STATE_COMPLETE;
-                        newjob->status = ANAX_STATE_COMPLETE;
-                        break;
-                    case ANAX_STATE_NOJOB:
-                        has_job = 0;
-                        break;
-                }
-            }
-        }
-        
+
         // Update local variables and signal the main thread that a new job is needed
         pthread_mutex_lock(&ready_mutex);
         destination->status = ANAX_STATE_NOJOB;
         pthread_cond_signal(&ready_cond);
         pthread_mutex_unlock(&ready_mutex);
+        
+        free(outbuf);
+    }
+        
+    // Send an empty tiff header to alert the remote node that there are no more tiffs
+    tiff_hdr_t *hdr = calloc(sizeof(tiff_hdr_t), sizeof(uint8_t));
+    hdr->packet_size = (uint32_t)sizeof(tiff_hdr_t);
+    hdr->type = HDR_TIFF;
+    hdr->contents = PACKET_IS_EMPTY;
+    bytes_sent = 0;
+    while(bytes_sent < sizeof(tiff_hdr_t)) {
+        bytes_sent += send(destination->socketfd, hdr, sizeof(tiff_hdr_t) - bytes_sent, 0);
+    }
+    
+    // Handle LOADED, COMPLETE, and NOJOB status updates from remote
+    int has_job = 1;
+    while(has_job) {
+        status_change_hdr_t buf;
+        int bytes_rcvd = 0;
+        while(bytes_rcvd < sizeof(status_change_hdr_t)) {
+            bytes_rcvd += recv(destination->socketfd, &buf + bytes_rcvd, sizeof(status_change_hdr_t) - bytes_rcvd, 0);
+        }
+        if(buf.type == HDR_STATUS_CHANGE) {
+            switch(buf.status) {
+                case ANAX_STATE_LOADED:
+                    destination->status = ANAX_STATE_LOADED;
+                    //newjob->status = ANAX_STATE_LOADED;
+                    break;
+                case ANAX_STATE_COMPLETE:
+                    destination->status = ANAX_STATE_COMPLETE;
+                    //newjob->status = ANAX_STATE_COMPLETE;
+                    break;
+                case ANAX_STATE_NOJOB:
+                    has_job = 0;
+                    break;
+            }
+        }
     }
     
     return 0;
@@ -475,7 +475,7 @@ void *runRemoteJob(void *argt) {
 }
 */
 
-int initRemoteListener(int *socketfd) {
+int initRemoteListener(int *socketfd, char *port) {
     // Get socket
     struct addrinfo hints, *res;
     memset(&hints, 0, sizeof(hints));
@@ -483,11 +483,14 @@ int initRemoteListener(int *socketfd) {
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE;
     
-    getaddrinfo(NULL, REMOTE_PORT, &hints, &res);
+    getaddrinfo(NULL, port, &hints, &res);
     
+    int yes = 1;
     for(struct addrinfo *a = res; a; a = a->ai_next) {
         *socketfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
         if(*socketfd < 0)
+            continue;
+        if(setsockopt(*socketfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) < 0)
             continue;
         if(bind(*socketfd, res->ai_addr, res->ai_addrlen) < 0) {
             close(*socketfd);
@@ -612,7 +615,7 @@ int getGeoTIFF(int outsocket, joblist_t *localjobs) {
     
         // Set up local information struct
         localjobs->num_jobs++;
-        localjobs->jobs = realloc(localjobs->jobs, localjobs->num_jobs * sizeof(anaxjob_t *));
+        localjobs->jobs = realloc(localjobs->jobs, localjobs->num_jobs * sizeof(anaxjob_t));
         anaxjob_t *current_job = &(localjobs->jobs[localjobs->num_jobs - 1]);
         current_job->name = calloc(hdr->string_length + 1, sizeof(char));
         strncpy(current_job->name, (char *)(buf + sizeof(tiff_hdr_t)), hdr->string_length);
@@ -621,7 +624,7 @@ int getGeoTIFF(int outsocket, joblist_t *localjobs) {
 
         // Get and store what will be the file's local location
         char *filename_without_path = strrchr(current_job->name, '/');
-        filename_without_path = (filename_without_path == NULL) ? 0 : filename_without_path + 1;
+        filename_without_path = (filename_without_path == NULL) ? current_job->name : filename_without_path + 1;
         current_job->outfile = calloc(strlen(filename_without_path) + 6, sizeof(char));
         sprintf(current_job->outfile, "/tmp/%s", filename_without_path);
         
@@ -636,6 +639,8 @@ int getGeoTIFF(int outsocket, joblist_t *localjobs) {
             // Remote file, must be downloaded
             downloadImage(current_job->name, current_job->outfile);
         }
+    } else {
+        return ANAX_ERR_INVALID_HEADER;
     }
 
     return 0;
@@ -1096,6 +1101,339 @@ int sendMinMax(destinationlist_t *remotenodes, int local_min, int local_max, int
     return 0;
 }
 
+void *spawnShareThread(void *argt) {
+    int sharesocketfd, shareoutsocketfd;
+    int err = initRemoteListener(&sharesocketfd, COMM_PORT);
+    while(1) {
+        struct sockaddr_in clientAddr;
+        socklen_t sinSize = sizeof(struct sockaddr_in);
+        shareoutsocketfd = accept(sharesocketfd, (struct sockaddr *)&clientAddr, &sinSize);
+        threadshare_t *new_argt = malloc(sizeof(threadshare_t));
+        memcpy(new_argt, argt, sizeof(threadshare_t));
+        new_argt->socket = shareoutsocketfd;
+        pthread_t sharethread;
+        pthread_create(&sharethread, NULL, handleSharing, new_argt);
+    }
+}
+
+void *handleSharing(void *argt) {
+    // Unpack thread argument struct
+    destinationlist_t *remotenodes = ((threadshare_t *)argt)->remotenodes;
+    joblist_t *localjobs = ((threadshare_t *)argt)->localjobs;
+    int *global_max = ((threadshare_t *)argt)->global_max;
+    int *global_min = ((threadshare_t *)argt)->global_min;
+    int whoami = ((threadshare_t *)argt)->whoami;
+    int socket = ((threadshare_t *)argt)->socket;
+    
+    // Handle incoming requests
+    while(1) {
+        int bytes_rcvd = 0;
+        uint32_t packet_size;
+        
+        // Get packet size
+        while(bytes_rcvd < sizeof(uint32_t)) {
+            bytes_rcvd += recv(socket, &packet_size, sizeof(uint32_t), 0);
+        }
+        
+        // Allocate a buffer
+        uint8_t *buf = calloc(packet_size, sizeof(uint8_t));
+        
+        // Read in the rest of the packet
+        while(bytes_rcvd < packet_size) {
+            bytes_rcvd += recv(socket, buf + 4, packet_size - 4, 0);
+        }
+        
+        // Handle different packet types
+        switch(buf[4]) {
+            case HDR_STATUS_CHANGE:
+            {
+                status_change_hdr_t *hdr = (status_change_hdr_t *)buf;
+                remotenodes->destinations[hdr->sender_id].jobs[hdr->job_id]->status = hdr->status;
+                remotenodes->destinations[hdr->sender_id].jobs[hdr->job_id]->top_lat = hdr->top;
+                remotenodes->destinations[hdr->sender_id].jobs[hdr->job_id]->bottom_lat = hdr->bottom;
+                remotenodes->destinations[hdr->sender_id].jobs[hdr->job_id]->left_lon = hdr->left;
+                remotenodes->destinations[hdr->sender_id].jobs[hdr->job_id]->right_lon = hdr->right;
+                break;
+            }
+            case HDR_REQ_EDGE:
+            {
+                req_edge_hdr_t *hdr = (req_edge_hdr_t *)buf;
+                
+                // Load requested map from memory
+                geotiffmap_t *map;
+                readMapData(&(localjobs->jobs[hdr->requested_job_id]), &map);
+                
+                // Identify and pack the desired data
+                int nrows, ncols;
+                int16_t *buf;
+                int pos = 0;
+                switch(hdr->part) {
+                    case ANAX_MAP_NORTH:
+                        nrows = MAPFRAME;
+                        ncols = map->width;
+                        buf = calloc(nrows * ncols, sizeof(int16_t));
+                        for(int i = 0; i < nrows; i++) {
+                            for(int j = MAPFRAME; j < ncols + MAPFRAME; j++) {
+                                buf[pos] = map->data[i][j].elevation;
+                                pos++;
+                            }
+                        }
+                        break;
+                    case ANAX_MAP_SOUTH:
+                        nrows = MAPFRAME;
+                        ncols = map->width;
+                        buf = calloc(nrows * ncols, sizeof(int16_t));
+                        for(int i = MAPFRAME + nrows; i < (MAPFRAME * 2) + nrows; i++) {
+                            for(int j = MAPFRAME; j < ncols + MAPFRAME; j++) {
+                                buf[pos] = map->data[i][j].elevation;
+                                pos++;
+                            }
+                        }
+                        break;
+                    case ANAX_MAP_EAST:
+                        nrows = map->height;
+                        ncols = MAPFRAME;
+                        buf = calloc(nrows * ncols, sizeof(int16_t));
+                        for(int i = MAPFRAME; i < MAPFRAME + nrows; i++) {
+                            for(int j = MAPFRAME + ncols; j < (MAPFRAME * 2) + ncols; j++) {
+                                buf[pos] = map->data[i][j].elevation;
+                                pos++;
+                            }
+                        }
+                        break;
+                    case ANAX_MAP_WEST:
+                        nrows = map->height;
+                        ncols = MAPFRAME;
+                        buf = calloc(nrows * ncols, sizeof(int16_t));
+                        for(int i = MAPFRAME; i < MAPFRAME + nrows; i++) {
+                            for(int j = 0; j < ncols; j++) {
+                                buf[pos] = map->data[i][j].elevation;
+                                pos++;
+                            }
+                        }
+                        break;
+                    case ANAX_MAP_NORTHEAST:
+                        nrows = MAPFRAME;
+                        ncols = MAPFRAME;
+                        buf = calloc(nrows * ncols, sizeof(int16_t));
+                        for(int i = 0; i < nrows; i++) {
+                            for(int j = MAPFRAME + map->width; j < MAPFRAME + map->width + ncols; j++) {
+                                buf[pos] = map->data[i][j].elevation;
+                                pos++;
+                            }
+                        }
+                        break;
+                    case ANAX_MAP_SOUTHEAST:
+                        nrows = MAPFRAME;
+                        ncols = MAPFRAME;
+                        buf = calloc(nrows * ncols, sizeof(int16_t));
+                        for(int i = MAPFRAME + map->height; i < MAPFRAME + map->height + nrows; i++) {
+                            for(int j = MAPFRAME + map->width; j < MAPFRAME + map->width + ncols; j++) {
+                                buf[pos] = map->data[i][j].elevation;
+                                pos++;
+                            }
+                        }
+                        break;
+                    case ANAX_MAP_SOUTHWEST:
+                        nrows = MAPFRAME;
+                        ncols = MAPFRAME;
+                        buf = calloc(nrows * ncols, sizeof(int16_t));
+                        for(int i = MAPFRAME + map->height; i < MAPFRAME + map->height + nrows; i++) {
+                            for(int j = 0; j < ncols; j++) {
+                                buf[pos] = map->data[i][j].elevation;
+                                pos++;
+                            }
+                        }
+                        break;
+                    case ANAX_MAP_NORTHWEST:
+                        nrows = MAPFRAME;
+                        ncols = MAPFRAME;
+                        buf = calloc(nrows * ncols, sizeof(int16_t));
+                        for(int i = 0; i < nrows; i++) {
+                            for(int j = 0; j < ncols; j++) {
+                                buf[pos] = map->data[i][j].elevation;
+                                pos++;
+                            }
+                        }
+                        break;
+                }
+                
+                // Allocate a response header
+                send_edge_hdr_t *outhdr = malloc(sizeof(send_edge_hdr_t));
+                
+                // Pack the response header
+                outhdr->packet_size = (uint32_t)sizeof(send_edge_hdr_t);
+                outhdr->type = HDR_SEND_EDGE;
+                outhdr->part = hdr->part;
+                outhdr->datasize = (uint16_t)(nrows * ncols);
+                outhdr->requesting_job_id = hdr->requesting_job_id;
+                outhdr->requested_job_id = hdr->requested_job_id;
+                
+                // Send the response and data
+                int bytes_sent = 0;
+                while(bytes_sent < sizeof(send_edge_hdr_t)) {
+                    bytes_sent += send(socket, outhdr, sizeof(send_edge_hdr_t) - bytes_sent, 0);
+                }
+                bytes_sent = 0;
+                while(bytes_sent < nrows * ncols) {
+                    bytes_sent += send(socket, buf, (nrows * ncols) - bytes_sent, 0);
+                }
+                
+                freeMap(map);
+                break;
+            }
+            case HDR_SEND_EDGE:
+            {
+                // Get the header
+                int bytes_rcvd = 0;
+                send_edge_hdr_t *hdr = malloc(sizeof(send_edge_hdr_t));
+                while(bytes_rcvd < sizeof(send_edge_hdr_t)) {
+                    bytes_rcvd += recv(socket, hdr, sizeof(send_edge_hdr_t) - bytes_rcvd, 0);
+                }
+                
+                // Get the data
+                uint8_t *databuf = calloc(hdr->datasize, sizeof(uint8_t));
+                bytes_rcvd = 0;
+                while(bytes_rcvd < hdr->datasize) {
+                    bytes_rcvd += recv(socket, databuf, hdr->datasize - bytes_rcvd, 0);
+                }
+                
+                // Load the map
+                // TODO: there need to be locks here
+                geotiffmap_t *map;
+                anaxjob_t *current_job = &(localjobs->jobs[hdr->requesting_job_id]);
+                readMapData(current_job, &map);
+                
+                // Add the new data
+                int pos = 0;
+                switch(hdr->part) {
+                    case ANAX_MAP_NORTH:
+                        if(current_job->frame_coordinates.S_set == 2) {
+                            // North side of original map -> add to south of current map
+                            for(int i = MAPFRAME + map->height; i < (2 * MAPFRAME) + map->height; i++) {
+                                for(int j = MAPFRAME; j < MAPFRAME + map->width; j++) {
+                                    map->data[i][j].elevation = databuf[pos++];
+                                }
+                            }
+                            // Set flags
+                            current_job->frame_coordinates.S_set = 1;
+                        }
+                        break;
+                    case ANAX_MAP_SOUTH:
+                        if(current_job->frame_coordinates.N_set == 2) {
+                            // South side of original map -> add to north of current map
+                            for(int i = 0; i < MAPFRAME; i++) {
+                                for(int j = MAPFRAME; j < MAPFRAME + map->width; j++) {
+                                    map->data[i][j].elevation = databuf[pos++];
+                                }
+                            }
+                            // Set flags
+                            current_job->frame_coordinates.N_set = 1;
+                        }
+                        break;
+                    case ANAX_MAP_EAST:
+                        if(current_job->frame_coordinates.W_set == 2) {
+                            // East side of original map -> add to west of current map
+                            for(int i = MAPFRAME; i < MAPFRAME + map->height; i++) {
+                                for(int j = 0; j < MAPFRAME; j++) {
+                                    map->data[i][j].elevation = databuf[pos++];
+                                }
+                            }
+                            // Set flags
+                            current_job->frame_coordinates.W_set = 1;
+                        }
+                        break;
+                    case ANAX_MAP_WEST:
+                        if(current_job->frame_coordinates.E_set == 2) {
+                            // West side of original map -> add to east of current map
+                            for(int i = MAPFRAME; i < MAPFRAME + map->height; i++) {
+                                for(int j = MAPFRAME + map->width; j < (2 * MAPFRAME) + map->width; j++) {
+                                    map->data[i][j].elevation = databuf[pos++];
+                                }
+                            }
+                            // Set flags
+                            current_job->frame_coordinates.E_set = 1;
+                        }
+                        break;
+                    case ANAX_MAP_NORTHEAST:
+                        if(current_job->frame_coordinates.SW_set == 2) {
+                            // Northeast side of original map -> add to southwest of current map
+                            for(int i = MAPFRAME + map->height; i < (2 * MAPFRAME) + map->height; i++) {
+                                for(int j = 0; j < MAPFRAME; j++) {
+                                    map->data[i][j].elevation = databuf[pos++];
+                                }
+                            }
+                            // Set flags
+                            current_job->frame_coordinates.SW_set = 1;
+                        }
+                        break;
+                    case ANAX_MAP_SOUTHEAST:
+                        if(current_job->frame_coordinates.NW_set == 2) {
+                            // Southeast side of original map -> add to northwest of current map
+                            for(int i = 0; i < MAPFRAME; i++) {
+                                for(int j = 0; j < MAPFRAME; j++) {
+                                    map->data[i][j].elevation = databuf[pos++];
+                                }
+                            }
+                            // Set flags
+                            current_job->frame_coordinates.NW_set = 1;
+                        }
+                        break;
+                    case ANAX_MAP_SOUTHWEST:
+                        if(current_job->frame_coordinates.NE_set == 2) {
+                            // Southwest side of original map -> add to northeast of current map
+                            for(int i = 0; i < MAPFRAME; i++) {
+                                for(int j = MAPFRAME + map->width; j < (2 * MAPFRAME) + map->width; j++) {
+                                    map->data[i][j].elevation = databuf[pos++];
+                                }
+                            }
+                            // Set flags
+                            current_job->frame_coordinates.NE_set = 1;
+                        }
+                        break;
+                    case ANAX_MAP_NORTHWEST:
+                        if(current_job->frame_coordinates.SE_set == 2) {
+                            // Northwest side of original map -> add to southeast of current map
+                            for(int i = MAPFRAME + map->height; i < (2 * MAPFRAME) + map->height; i++) {
+                                for(int j = MAPFRAME + map->width; j < (2 * MAPFRAME) + map->width; j++) {
+                                    map->data[i][j].elevation = databuf[pos++];
+                                }
+                            }
+                            // Set flags
+                            current_job->frame_coordinates.SE_set = 1;
+                        }
+                        break;
+                }
+                
+                // Write the map
+                writeMapData(current_job, map);
+                
+                // Check if map is now complete
+                if(current_job->frame_coordinates.N_set &&
+                  current_job->frame_coordinates.S_set &&
+                  current_job->frame_coordinates.E_set &&
+                  current_job->frame_coordinates.W_set &&
+                  current_job->frame_coordinates.NE_set &&
+                  current_job->frame_coordinates.SE_set &&
+                  current_job->frame_coordinates.SW_set &&
+                  current_job->frame_coordinates.NW_set) {
+                   current_job->status = ANAX_STATE_RENDERING;
+                }
+                break;
+            }
+            case HDR_SEND_MIN_MAX:
+            {
+                min_max_hdr_t *hdr = (min_max_hdr_t *)buf;
+                *global_max = (*global_max > hdr->max) ? *global_max : hdr->max;
+                *global_min = (*global_min > hdr->min) ? *global_min : hdr->min;
+                break;
+            }
+        }
+        
+        free(buf);
+    }
+}
+
 int returnPNG(int outsocket, char *filename) {
     // Get the file size
     FILE *fp = fopen(filename, "r");
@@ -1130,6 +1468,16 @@ int countComplete(joblist_t *joblist) {
     int count = 0;
     for(int i = 0; i < joblist->num_jobs; i++) {
         if(joblist->jobs[i].status == ANAX_STATE_COMPLETE)
+            count++;
+    }
+    
+    return count;
+}
+
+int countJobless(destinationlist_t *dests) {
+    int count = 0;
+    for(int i = 0; i < dests->num_destinations; i++) {
+        if(dests->destinations[i].status == ANAX_STATE_NOJOB)
             count++;
     }
     

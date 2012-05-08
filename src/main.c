@@ -69,7 +69,7 @@ int main(int argc, char *argv[]) {
 				exit(ANAX_ERR_INVALID_INVOCATION);
 				break;
 		}
-	}
+	}   
 
 	joblist_t *joblist = malloc(sizeof(joblist_t));
 	joblist->num_jobs = 0;
@@ -144,13 +144,17 @@ int main(int argc, char *argv[]) {
 	    
 		// Send out later jobs as remote nodes free up
 		int completed = 0;
+		int jobless = 0;
 		while(completed < joblist->num_jobs) {
+		    printf("Waiting on lock...\n");
     		pthread_mutex_lock(&ready_mutex);
-	    	while(countComplete(joblist) == completed) {
+	    	while(countComplete(joblist) == completed && countJobless(destinationlist) == jobless) {
 		        pthread_cond_wait(&ready_cond, &ready_mutex);
 		    }
 		    completed = countComplete(joblist);
+		    jobless = countJobless(destinationlist);
 		    pthread_mutex_unlock(&ready_mutex);
+		    printf("Got signal\n");
 		    
 		    err = distributeJobs(destinationlist, joblist);
 		}
@@ -168,10 +172,10 @@ int main(int argc, char *argv[]) {
         
         // Network setup
         int socketfd, outsocketfd;
-        err = initRemoteListener(&socketfd);
+        err = initRemoteListener(&socketfd, REMOTE_PORT);
         struct sockaddr_in clientAddr;
         socklen_t sinSize = sizeof(struct sockaddr_in);
-        outsocketfd = accept(socketfd, (struct sockaddr *)&clientAddr, &sinSize);
+        outsocketfd = accept(socketfd, (struct sockaddr *)&clientAddr, &sinSize);        
         
         // Receive and set up colorscheme and scale
         int whoami;
@@ -186,16 +190,29 @@ int main(int argc, char *argv[]) {
         // Receive and set up a list of all remote nodes
         destinationlist_t *remotenodes;
         getNodesHeaderData(outsocketfd, &remotenodes);
-        
+
         // Set up a list for local jobs
         joblist_t *localjobs = malloc(sizeof(joblist_t));
         localjobs->num_jobs = 0;
         localjobs->jobs = NULL;
+
+        // Set up data exchange thread spawner
+        threadshare_t *argt = malloc(sizeof(threadshare_t));
+        argt->remotenodes = remotenodes;
+        argt->localjobs = localjobs;
+        argt->global_max = &global_max;
+        argt->global_min = &global_min;
+        argt->whoami = whoami;
+        argt->socket = -1;
+        pthread_t sharethread;
+        pthread_create(&sharethread, NULL, spawnShareThread, argt);
         
         // Download and process GeoTIFF files
         while(1) {
             // Create a local copy of the GeoTIFF
             err = getGeoTIFF(outsocketfd, localjobs);
+            if(err == ANAX_ERR_INVALID_HEADER)
+                continue;
             if(err == ANAX_ERR_NO_MAP)
                 break;
             anaxjob_t *current_job = &(localjobs->jobs[localjobs->num_jobs - 1]);
@@ -221,7 +238,6 @@ int main(int argc, char *argv[]) {
             
             // Store frame coordinates (to be used when requesting frame data from other nodes)
             memcpy(&(current_job->frame_coordinates), frame, sizeof(frame_coords_t));
-            free(frame);
             
             // Get periphery
             getCorners(map, &(current_job->top_lat), &(current_job->bottom_lat), &(current_job->left_lon), &(current_job->right_lon));
@@ -271,8 +287,16 @@ int main(int argc, char *argv[]) {
                 }
             }
             
+            printf("Sleeping\n");
             sleep(2);
         }
+
+        // Set any remaining jobs' status to rendering
+        for(int i = 0; i < localjobs->num_jobs; i++) {
+            if(localjobs->jobs[i].status == ANAX_STATE_LOADED)
+                localjobs->jobs[i].status = ANAX_STATE_RENDERING;
+        }
+        printf("All data is ready. Proceeding to rendering phase.\n");
         
         // If the colorscheme is relative, update it with the appropriate scale
         if(colorscheme->isAbsolute == ANAX_RELATIVE_COLORS) {
