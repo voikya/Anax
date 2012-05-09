@@ -146,7 +146,8 @@ int main(int argc, char *argv[]) {
 		int completed = 0;
 		int jobless = 0;
 		while(completed < joblist->num_jobs) {
-		    printf("Waiting on lock...\n");
+		    printf("Waiting on lock... ");
+		    fflush(stdout);
     		pthread_mutex_lock(&ready_mutex);
 	    	while(countComplete(joblist) == completed && countJobless(destinationlist) == jobless) {
 		        pthread_cond_wait(&ready_cond, &ready_mutex);

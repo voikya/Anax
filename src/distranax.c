@@ -103,6 +103,7 @@ int connectToRemoteHost(destination_t *dest, char *port) {
 
 int initRemoteHosts(destinationlist_t *destinationlist, colorscheme_t *colorscheme, double scale) {
     printf("Packing initialization header... ");
+    fflush(stdout);
     
     // Allocate and pack an initialization header
     int packetsize = sizeof(init_hdr_t) + (sizeof(compressed_color_t) * colorscheme->num_stops);
@@ -148,6 +149,7 @@ int initRemoteHosts(destinationlist_t *destinationlist, colorscheme_t *colorsche
     
     printf("Done\n");
     printf("Initializing remote nodes...");
+    fflush(stdout);
     
     // Launch a new thread for each remote node
     for(int i = 0; i < destinationlist->num_destinations; i++) {
@@ -672,6 +674,7 @@ int getImageFromPrimary(int outsocket, char *filename, char *outfile, uint32_t f
     printf("File size: %i\n", (int)filesize);
 
     printf("Receiving image from primary node... ");
+    fflush(stdout);
 
     uint8_t buf[8192]; // 8 kilobytes
     while(bytes_rcvd < filesize) {
@@ -689,6 +692,7 @@ int getImageFromPrimary(int outsocket, char *filename, char *outfile, uint32_t f
 
 int downloadImage(char *filename, char *outfile) {
     printf("Downloading image... ");
+    fflush(stdout);
 
     FILE *fp = fopen(outfile, "w+");
     
@@ -730,7 +734,7 @@ int sendStatusUpdate(int outsocket, destinationlist_t *remotenodes, anaxjob_t *c
         hdr->packet_size = (uint32_t)sizeof(status_change_hdr_t);
         hdr->type = HDR_STATUS_CHANGE;
         hdr->status = ANAX_STATE_RENDERING;
-        hdr->job_id = 0;
+        hdr->job_id = -1;
         hdr->sender_id = whoami;
         hdr->top = 0;
         hdr->bottom = 0;
@@ -1166,19 +1170,24 @@ void *handleSharing(void *argt) {
             case HDR_STATUS_CHANGE:
             {
                 status_change_hdr_t *hdr = (status_change_hdr_t *)buf;
-                int job_id = getJobIndex(&(remotenodes->destinations[hdr->sender_id]), hdr->job_id);
-                if(job_id == -1) {
-                    remotenodes->destinations[hdr->sender_id].num_jobs++;
-                    remotenodes->destinations[hdr->sender_id].jobs = realloc(remotenodes->destinations[hdr->sender_id].jobs, remotenodes->destinations[hdr->sender_id].num_jobs * sizeof(anaxjob_t *));
-                    job_id = remotenodes->destinations[hdr->sender_id].num_jobs - 1;
-                    remotenodes->destinations[hdr->sender_id].jobs[job_id] = malloc(sizeof(anaxjob_t));
+                if(hdr->job_id != (uint16_t)-1) {
+                    int job_id = getJobIndex(&(remotenodes->destinations[hdr->sender_id]), hdr->job_id);
+                    if(job_id == -1) {
+                        remotenodes->destinations[hdr->sender_id].num_jobs++;
+                        remotenodes->destinations[hdr->sender_id].jobs = realloc(remotenodes->destinations[hdr->sender_id].jobs, remotenodes->destinations[hdr->sender_id].num_jobs * sizeof(anaxjob_t *));
+                        job_id = remotenodes->destinations[hdr->sender_id].num_jobs - 1;
+                        remotenodes->destinations[hdr->sender_id].jobs[job_id] = malloc(sizeof(anaxjob_t));
+                    }
+                    remotenodes->destinations[hdr->sender_id].jobs[job_id]->index = hdr->job_id;
+                    remotenodes->destinations[hdr->sender_id].jobs[job_id]->status = hdr->status;
+                    remotenodes->destinations[hdr->sender_id].jobs[job_id]->top_lat = hdr->top;
+                    remotenodes->destinations[hdr->sender_id].jobs[job_id]->bottom_lat = hdr->bottom;
+                    remotenodes->destinations[hdr->sender_id].jobs[job_id]->left_lon = hdr->left;
+                    remotenodes->destinations[hdr->sender_id].jobs[job_id]->right_lon = hdr->right;
+                } else {
+                    // Global status change (apply to whole node, not just one job)
+                    remotenodes->destinations[hdr->sender_id].status = hdr->status;
                 }
-                remotenodes->destinations[hdr->sender_id].jobs[job_id]->index = hdr->job_id;
-                remotenodes->destinations[hdr->sender_id].jobs[job_id]->status = hdr->status;
-                remotenodes->destinations[hdr->sender_id].jobs[job_id]->top_lat = hdr->top;
-                remotenodes->destinations[hdr->sender_id].jobs[job_id]->bottom_lat = hdr->bottom;
-                remotenodes->destinations[hdr->sender_id].jobs[job_id]->left_lon = hdr->left;
-                remotenodes->destinations[hdr->sender_id].jobs[job_id]->right_lon = hdr->right;
                 break;
             }
             case HDR_REQ_EDGE:
