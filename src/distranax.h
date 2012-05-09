@@ -35,6 +35,7 @@ struct thread_arguments {
     int init_pkt_size;
     uint8_t *nodes_pkt;
     int nodes_pkt_size;
+    int index;
 };
 typedef struct thread_arguments threadarg_t;
 

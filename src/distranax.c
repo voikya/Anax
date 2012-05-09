@@ -152,13 +152,13 @@ int initRemoteHosts(destinationlist_t *destinationlist, colorscheme_t *colorsche
     // Launch a new thread for each remote node
     for(int i = 0; i < destinationlist->num_destinations; i++) {
         if(destinationlist->destinations[i].status == ANAX_STATE_NOJOB) {
-            hdr->index = (uint8_t)i;
             threadarg_t *argt = malloc(sizeof(threadarg_t));
             argt->dest = &(destinationlist->destinations[i]);
             argt->init_pkt = packet;
             argt->init_pkt_size = (int)(hdr->packet_size);
             argt->nodes_pkt = packet2;
             argt->nodes_pkt_size = (int)(hdr2->packet_size);
+            argt->index = (uint8_t)i;
             
             pthread_create(&(destinationlist->destinations[i].thread), NULL, runRemoteNode, argt);
         }
@@ -213,13 +213,20 @@ void *runRemoteNode(void *argt) {
     int init_pkt_size = ((threadarg_t *)argt)->init_pkt_size;
     uint8_t *nodes_pkt = ((threadarg_t *)argt)->nodes_pkt;
     int nodes_pkt_size = ((threadarg_t *)argt)->nodes_pkt_size;
+    uint8_t index = ((threadarg_t *)argt)->index;
 
     int bytes_sent = 0;
     int num_bytes = 0;
+    
+    // Create an out buffer for the initialization packet and set the destination index
+    // (so as to not overwrite the packet used by other threads)
+    uint8_t initbuf[init_pkt_size];
+    memcpy(initbuf, init_pkt, init_pkt_size);
+    initbuf[7] = index;
 
     // Send out initialization header
     while(bytes_sent < init_pkt_size) {
-        bytes_sent += send(destination->socketfd, init_pkt + bytes_sent, init_pkt_size - bytes_sent, 0);
+        bytes_sent += send(destination->socketfd, initbuf + bytes_sent, init_pkt_size - bytes_sent, 0);
     }
     
     // Send out nodes header
