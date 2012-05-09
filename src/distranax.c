@@ -1166,11 +1166,19 @@ void *handleSharing(void *argt) {
             case HDR_STATUS_CHANGE:
             {
                 status_change_hdr_t *hdr = (status_change_hdr_t *)buf;
-                remotenodes->destinations[hdr->sender_id].jobs[hdr->job_id]->status = hdr->status;
-                remotenodes->destinations[hdr->sender_id].jobs[hdr->job_id]->top_lat = hdr->top;
-                remotenodes->destinations[hdr->sender_id].jobs[hdr->job_id]->bottom_lat = hdr->bottom;
-                remotenodes->destinations[hdr->sender_id].jobs[hdr->job_id]->left_lon = hdr->left;
-                remotenodes->destinations[hdr->sender_id].jobs[hdr->job_id]->right_lon = hdr->right;
+                int job_id = getJobIndex(&(remotenodes->destinations[hdr->sender_id]), hdr->job_id);
+                if(job_id == -1) {
+                    remotenodes->destinations[hdr->sender_id].num_jobs++;
+                    remotenodes->destinations[hdr->sender_id].jobs = realloc(remotenodes->destinations[hdr->sender_id].jobs, remotenodes->destinations[hdr->sender_id].num_jobs * sizeof(anaxjob_t *));
+                    job_id = remotenodes->destinations[hdr->sender_id].num_jobs - 1;
+                    remotenodes->destinations[hdr->sender_id].jobs[job_id] = malloc(sizeof(anaxjob_t));
+                }
+                remotenodes->destinations[hdr->sender_id].jobs[job_id]->index = hdr->job_id;
+                remotenodes->destinations[hdr->sender_id].jobs[job_id]->status = hdr->status;
+                remotenodes->destinations[hdr->sender_id].jobs[job_id]->top_lat = hdr->top;
+                remotenodes->destinations[hdr->sender_id].jobs[job_id]->bottom_lat = hdr->bottom;
+                remotenodes->destinations[hdr->sender_id].jobs[job_id]->left_lon = hdr->left;
+                remotenodes->destinations[hdr->sender_id].jobs[job_id]->right_lon = hdr->right;
                 break;
             }
             case HDR_REQ_EDGE:
@@ -1179,7 +1187,12 @@ void *handleSharing(void *argt) {
                 
                 // Load requested map from memory
                 geotiffmap_t *map;
-                readMapData(&(localjobs->jobs[hdr->requested_job_id]), &map);
+                for(int i = 0; i < localjobs->num_jobs; i++) {
+                    if(localjobs->jobs[i].index == hdr->requested_job_id) {
+                        readMapData(&(localjobs->jobs[i]), &map);
+                        break;
+                    }
+                }
                 
                 // Identify and pack the desired data
                 int nrows, ncols;
@@ -1319,7 +1332,11 @@ void *handleSharing(void *argt) {
                 // Load the map
                 // TODO: there need to be locks here
                 geotiffmap_t *map;
-                anaxjob_t *current_job = &(localjobs->jobs[hdr->requesting_job_id]);
+                anaxjob_t *current_job;
+                for(int i = 0; i < localjobs->num_jobs; i++) {
+                    if(localjobs->jobs[i].index == hdr->requesting_job_id)
+                        current_job = &(localjobs->jobs[i]);
+                }
                 readMapData(current_job, &map);
                 
                 // Add the new data
@@ -1517,5 +1534,13 @@ int sendCorners(int outsocket, double top, double bottom, double left, double ri
     return 0;
 }
 
+int getJobIndex(destination_t *dest, int index) {
+    for(int i = 0; i < dest->num_jobs; i++) {
+        if(dest->jobs[i]->index == index)
+            return i;
+    }
+    
+    return -1;
+}
 
 

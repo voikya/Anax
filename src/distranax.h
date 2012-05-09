@@ -192,5 +192,6 @@ int returnPNG(int outsocket, char *filename);
 int countComplete(joblist_t *joblist);
 int countJobless(destinationlist_t *dests);
 int sendCorners(int outsocketfd, double top, double bottom, double left, double right);
+int getJobIndex(destination_t *dest, int index);
 
 #endif
