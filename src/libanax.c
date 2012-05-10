@@ -520,8 +520,6 @@ int writeMapData(anaxjob_t *current_job, geotiffmap_t *map) {
         fwrite(buf, sizeof(int16_t), bufsize, fp);
     }
     
-    freeMap(map);
-    
     fclose(fp);
     
     return 0;

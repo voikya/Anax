@@ -965,6 +965,10 @@ int queryForMapFrameLocal(anaxjob_t *current_job, joblist_t *localjobs) {
     // Write the map
     writeMapData(current_job, current_map);
     
+    // Free the map
+    if(current_map)
+        freeMap(current_map);
+    
     return 0;
 }
 
@@ -1467,6 +1471,9 @@ void *handleSharing(void *argt) {
                 
                 // Write the map
                 writeMapData(current_job, map);
+                
+                // Free the map
+                freeMap(map);
                 
                 // Check if map is now complete
                 if(current_job->frame_coordinates.N_set &&

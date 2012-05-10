@@ -253,6 +253,9 @@ int main(int argc, char *argv[]) {
             
             // Write the map data to a temporary file
             writeMapData(current_job, map);
+            
+            // Free the map
+            freeMap(map);
         }
         
         // Alert all other nodes that this node has received all files
@@ -332,6 +335,9 @@ int main(int argc, char *argv[]) {
                     rendered++;
                     current_job->status = ANAX_STATE_COMPLETE;
                     sendStatusUpdate(outsocketfd, remotenodes, current_job, whoami);
+                    
+                    // Free the map
+                    freeMap(map);
                 }
             }
         }
@@ -425,6 +431,9 @@ int main(int argc, char *argv[]) {
     
             // Render PNG
             renderPNG(map, outfile, qflag);
+            
+            // Free the map
+            freeMap(map);
         }
 	}
 
