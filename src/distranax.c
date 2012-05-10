@@ -794,6 +794,7 @@ int queryForMapFrameLocal(anaxjob_t *current_job, joblist_t *localjobs) {
     printf("North\n");
     if(!current_job->frame_coordinates.N_set) {
         for(int i = 0; i < localjobs->num_jobs; i++) {
+            printf("%f > %f\n%f < %f\n%f > %f\n%f < %f\n\n", current_job->frame_coordinates.north_lat, localjobs->jobs[i].bottom_lat,current_job->frame_coordinates.north_lat, localjobs->jobs[i].top_lat, current_job->frame_coordinates.mid_lon, localjobs->jobs[i].left_lon, current_job->frame_coordinates.mid_lon, localjobs->jobs[i].right_lon);
             if(current_job->frame_coordinates.north_lat > localjobs->jobs[i].bottom_lat && 
                current_job->frame_coordinates.north_lat < localjobs->jobs[i].top_lat &&
                current_job->frame_coordinates.mid_lon > localjobs->jobs[i].left_lon &&

@@ -116,7 +116,7 @@ int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile, int suppress_output, 
 	// This code divides the frame into eight portions (N, S, E, W, NE, SE, SW, NW) and identifies
 	// what the coordinates of the midpoint of each section would be.
 	point_t *midpoint = &((*map)->data[(*map)->height / 2 + MAPFRAME][(*map)->width / 2 + MAPFRAME]);
-	double lat_step = (*map)->data[MAPFRAME + 1][MAPFRAME + 1].latitude - (*map)->data[MAPFRAME][MAPFRAME].latitude;
+	double lat_step = (*map)->data[MAPFRAME][MAPFRAME].latitude - (*map)->data[MAPFRAME + 1][MAPFRAME + 1].latitude;
 	double lon_step = (*map)->data[MAPFRAME + 1][MAPFRAME + 1].longitude - (*map)->data[MAPFRAME][MAPFRAME].longitude;
 	frame->N_set = 0;
 	frame->S_set = 0;
@@ -487,6 +487,7 @@ int renderPNG(geotiffmap_t *map, char *outfile, int suppress_output) {
 	png_write_end(png_ptr, NULL);
 	
 	// Free memory
+	free(row_pointer);
 	png_destroy_write_struct(&png_ptr, &info_ptr);
 	
 
@@ -495,10 +496,10 @@ int renderPNG(geotiffmap_t *map, char *outfile, int suppress_output) {
 }
 
 int getCorners(geotiffmap_t *map, double *top, double *bottom, double *left, double *right) {
-    *top = map->data[0][0].latitude;
-    *left = map->data[0][0].longitude;
-    *bottom = map->data[map->height - 1][map->width - 1].latitude;
-    *right = map->data[map->height - 1][map->width - 1].longitude;
+    *top = map->data[MAPFRAME][MAPFRAME].latitude;
+    *left = map->data[MAPFRAME][MAPFRAME].longitude;
+    *bottom = map->data[map->height + MAPFRAME - 1][map->width + MAPFRAME - 1].latitude;
+    *right = map->data[map->height + MAPFRAME - 1][map->width + MAPFRAME - 1].longitude;
     
     return 0;
 }
