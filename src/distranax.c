@@ -324,12 +324,28 @@ void *runRemoteNode(void *argt) {
             
             fclose(fp);
         }
-
+        
+        // Wait for a status update response from the remote node
+        uint32_t packet_size;
+        int bytes_rcvd = 0;
+        while(bytes_rcvd < sizeof(uint32_t)) {
+            bytes_rcvd += recv(destination->socketfd, &packet_size, sizeof(uint32_t) - bytes_rcvd, 0);
+        }
+        uint8_t buf[packet_size];
+        while(bytes_rcvd < packet_size) {
+            bytes_rcvd += recv(destination->socketfd, buf + bytes_rcvd, packet_size - bytes_rcvd, 0);
+        }
+        status_change_hdr_t *hdr = (status_change_hdr_t *)buf;
+        
         // Update local variables and signal the main thread that a new job is needed
-        pthread_mutex_lock(&ready_mutex);
-        destination->status = ANAX_STATE_NOJOB;
-        pthread_cond_signal(&ready_cond);
-        pthread_mutex_unlock(&ready_mutex);
+        if(hdr->type == HDR_STATUS_CHANGE) {
+            int index = getJobIndex(destination, hdr->job_id);
+            pthread_mutex_lock(&ready_mutex);
+            destination->jobs[index]->status = hdr->status;
+            destination->status = ANAX_STATE_NOJOB;
+            pthread_cond_signal(&ready_cond);
+            pthread_mutex_unlock(&ready_mutex);
+        }
         
         free(outbuf);
     }
