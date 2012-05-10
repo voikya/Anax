@@ -791,6 +791,7 @@ int queryForMapFrameLocal(anaxjob_t *current_job, joblist_t *localjobs) {
     readMapData(current_job, &current_map);
     
     // North
+    printf("North\n");
     if(!current_job->frame_coordinates.N_set) {
         for(int i = 0; i < localjobs->num_jobs; i++) {
             if(current_job->frame_coordinates.north_lat > localjobs->jobs[i].bottom_lat && 
@@ -811,6 +812,7 @@ int queryForMapFrameLocal(anaxjob_t *current_job, joblist_t *localjobs) {
     }
     
     // South
+    printf("South\n");
     if(!current_job->frame_coordinates.S_set) {
         for(int i = 0; i < localjobs->num_jobs; i++) {
             if(current_job->frame_coordinates.south_lat < localjobs->jobs[i].top_lat &&
@@ -831,6 +833,7 @@ int queryForMapFrameLocal(anaxjob_t *current_job, joblist_t *localjobs) {
     }
     
     // East
+    printf("East\n");
     if(!current_job->frame_coordinates.E_set) {
         for(int i = 0; i < localjobs->num_jobs; i++) {
             if(current_job->frame_coordinates.east_lon > localjobs->jobs[i].left_lon &&
@@ -851,6 +854,7 @@ int queryForMapFrameLocal(anaxjob_t *current_job, joblist_t *localjobs) {
     }
     
     // West
+    printf("West\n");
     if(!current_job->frame_coordinates.W_set) {
         for(int i = 0; i < localjobs->num_jobs; i++) {
             if(current_job->frame_coordinates.west_lon < localjobs->jobs[i].left_lon &&
@@ -871,6 +875,7 @@ int queryForMapFrameLocal(anaxjob_t *current_job, joblist_t *localjobs) {
     }
     
     // Northeast
+    printf("Northeast\n");
     if(!current_job->frame_coordinates.NE_set) {
         for(int i = 0; i < localjobs->num_jobs; i++) {
             if(current_job->frame_coordinates.east_lon > localjobs->jobs[i].left_lon &&
@@ -891,12 +896,13 @@ int queryForMapFrameLocal(anaxjob_t *current_job, joblist_t *localjobs) {
     }
     
     // Southeast
+    printf("Southeast\n");
     if(!current_job->frame_coordinates.SE_set) {
         for(int i = 0; i < localjobs->num_jobs; i++) {
             if(current_job->frame_coordinates.east_lon > localjobs->jobs[i].left_lon &&
                current_job->frame_coordinates.east_lon < localjobs->jobs[i].right_lon &&
-               current_job->frame_coordinates.south_lat < localjobs->jobs[i].bottom_lat &&
-               current_job->frame_coordinates.south_lat > localjobs->jobs[i].top_lat) {
+               current_job->frame_coordinates.south_lat > localjobs->jobs[i].bottom_lat &&
+               current_job->frame_coordinates.south_lat < localjobs->jobs[i].top_lat) {
                 readMapData(&(localjobs->jobs[i]), &other_map);
                 for(int j = current_map->height + MAPFRAME; j < current_map->height + (2 * MAPFRAME); j++) {
                     for(int k = current_map->width + MAPFRAME; k < current_map->width + (2 * MAPFRAME); k++) {
@@ -911,12 +917,13 @@ int queryForMapFrameLocal(anaxjob_t *current_job, joblist_t *localjobs) {
     }
     
     // Southwest
+    printf("Southwest\n");
     if(!current_job->frame_coordinates.SW_set) {
         for(int i = 0; i < localjobs->num_jobs; i++) {
             if(current_job->frame_coordinates.west_lon < localjobs->jobs[i].right_lon &&
                current_job->frame_coordinates.west_lon > localjobs->jobs[i].left_lon &&
-               current_job->frame_coordinates.south_lat < localjobs->jobs[i].bottom_lat &&
-               current_job->frame_coordinates.south_lat > localjobs->jobs[i].top_lat) {
+               current_job->frame_coordinates.south_lat > localjobs->jobs[i].bottom_lat &&
+               current_job->frame_coordinates.south_lat < localjobs->jobs[i].top_lat) {
                 readMapData(&(localjobs->jobs[i]), &other_map);
                 for(int j = current_map->height + MAPFRAME; j < current_map->height + (2 * MAPFRAME); j++) {
                     for(int k = 0; k < MAPFRAME; k++) {
@@ -931,6 +938,7 @@ int queryForMapFrameLocal(anaxjob_t *current_job, joblist_t *localjobs) {
     }
     
     // Northwest
+    printf("Northwest\n");
     if(!current_job->frame_coordinates.NW_set) {
         for(int i = 0; i < localjobs->num_jobs; i++) {
             if(current_job->frame_coordinates.west_lon < localjobs->jobs[i].right_lon &&
@@ -1105,7 +1113,7 @@ int requestMapFrame(anaxjob_t *current_job, destination_t *remote, int index, in
     hdr->type = HDR_REQ_EDGE;
     hdr->part = (uint8)request;
     hdr->requesting_job_id = (uint16_t)(current_job->index);
-    hdr->requested_job_id = (uint16_t)index;
+    hdr->requested_job_id = (uint16_t)(remote->jobs[index]->index);
     
     // Send the request
     int bytes_sent = 0;
@@ -1309,8 +1317,8 @@ void *handleSharing(void *argt) {
                         nrows = MAPFRAME;
                         ncols = MAPFRAME;
                         buf = calloc(nrows * ncols, sizeof(int16_t));
-                        for(int i = 0; i < nrows; i++) {
-                            for(int j = 0; j < ncols; j++) {
+                        for(int i = MAPFRAME; i < MAPFRAME + nrows; i++) {
+                            for(int j = MAPFRAME; j < MAPFRAME + ncols; j++) {
                                 buf[pos] = map->data[i][j].elevation;
                                 pos++;
                             }

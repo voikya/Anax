@@ -109,6 +109,8 @@ int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile, int suppress_output, 
             (*map)->data[row + MAPFRAME][col + MAPFRAME].longitude = left_lon + change_in_lon * ((double)col / ((double)((*map)->width) - 1.0));
 		}
 	}
+
+    GTIFFree(geotiff);
 	
 	// Set frame coordinates
 	// This code divides the frame into eight portions (N, S, E, W, NE, SE, SW, NW) and identifies
@@ -542,6 +544,8 @@ int readMapData(anaxjob_t *current_job, geotiffmap_t **map) {
 
     // Allocate map data array
 	(*map)->data = malloc(((*map)->height + (2 * MAPFRAME)) * sizeof(point_t *));
+	if((*map)->data == NULL)
+	    return ANAX_ERR_NO_MEMORY;
 	for(int i = 0; i < (*map)->height + (2 * MAPFRAME); i++) {
 		(*map)->data[i] = malloc(((*map)->width + (2 * MAPFRAME)) * sizeof(point_t));
 		if((*map)->data[i] == NULL)
@@ -565,7 +569,7 @@ int readMapData(anaxjob_t *current_job, geotiffmap_t **map) {
 }
 
 void freeMap(geotiffmap_t *map) {
-    for(int i = 0; i < map->height; i++) {
+    for(int i = 0; i < map->height + (2 * MAPFRAME); i++) {
         free(map->data[i]);
     }
     free(map->data);

@@ -267,15 +267,19 @@ int main(int argc, char *argv[]) {
         }
         
         // Check for neighboring images amongst local tiles
+        printf("Performing local map query...\n");
         for(int i = 0; i < localjobs->num_jobs; i++) {
+            printf("... Examining job %i of %i\n", i + 1, localjobs->num_jobs);
             queryForMapFrameLocal(&(localjobs->jobs[i]), localjobs);
         }
         
         // Query other nodes for frame information
+        printf("Performing remote map query...\n");
         int done = 0;
         while(!done) {
             for(int i = 0; i < localjobs->num_jobs; i++) {
                 if(localjobs->jobs[i].status == ANAX_STATE_LOADED) {
+                    printf("Querying job %i of %i\n", i + 1, localjobs->num_jobs);
                     queryForMapFrame(&(localjobs->jobs[i]), remotenodes);
                 }
                 
