@@ -24,6 +24,9 @@
 #define PACKET_HAS_URL          0x02
 #define PACKET_IS_EMPTY         0x03
 
+#define ROLE_SENDER             1
+#define ROLE_RECEIVER           2
+
 
 /////
 // PTHREAD ARGUMENT STRUCTS
@@ -48,6 +51,14 @@ struct share_arguments {
     int socket;
 };
 typedef struct share_arguments threadshare_t;
+
+struct mapframe_thread_arguments {
+    int socket;
+    int numbytes;
+    pthread_mutex_t *lock;
+    int16_t *buf;
+};
+typedef struct mapframe_thread_arguments mapframe_threadarg_t;
 
 
 /////
@@ -125,10 +136,10 @@ struct header_send_edge {
     uint32_t packet_size;
     uint8_t type; // HDR_SEND_EDGE
     uint8_t part; // ANAX_MAP_*
-    uint16_t datasize;
     uint16_t requesting_job_id;
     uint16_t requested_job_id;
-    uint8_t fill[4];
+    uint32_t datasize;
+    uint8_t fill[2];
     // Followed by data array
 };
 typedef struct header_send_edge send_edge_hdr_t;
@@ -188,6 +199,7 @@ int requestMapFrame(anaxjob_t *current_job, destination_t *remote, int index, in
 int sendMinMax(destinationlist_t *remotenodes, int local_min, int local_max, int whoami);
 void *spawnShareThread(void *argt);
 void *handleSharing(void *argt);
+void *sendMapFrame(void *argt);
 int returnPNG(int outsocket, char *filename);
 int countComplete(joblist_t *joblist);
 int countJobless(destinationlist_t *dests);

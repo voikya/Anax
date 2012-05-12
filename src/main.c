@@ -20,6 +20,8 @@ void usage() {
 }
 
 int main(int argc, char *argv[]) {
+    setvbuf(stdout, NULL, _IONBF, NULL);
+
 	// Argument flags
 	int c;
 	int cflag = 0;
@@ -225,9 +227,11 @@ int main(int argc, char *argv[]) {
                 exit(ANAX_ERR_FILE_DOES_NOT_EXIST);
             }
             
-            // Set the new name for the outfile (TMP)
-            current_job->outfile = realloc(current_job->outfile, 20);
-            sprintf(current_job->outfile, "/tmp/map%i.tmp", current_job->index);
+            // Set the new name for the outfile (PNG) and tempfile (TMP)
+            current_job->outfile = realloc(current_job->outfile, 32);
+            current_job->tmpfile = malloc(32);
+            sprintf(current_job->tmpfile, "/tmp/map%i.tmp", current_job->index);
+            sprintf(current_job->outfile, "/tmp/map%i.png", current_job->index);
             
             // Load data from GeoTIFF
             geotiffmap_t *map;
@@ -292,6 +296,7 @@ int main(int argc, char *argv[]) {
                         count = (remotenodes->destinations[c].status == ANAX_STATE_RENDERING) ? count + 1 : count;
                     }
                     done = (count == remotenodes->num_destinations - 1) ? 1 : 0;
+            printf("Done: %i\n", count);
                 }
             }
             
@@ -301,7 +306,15 @@ int main(int argc, char *argv[]) {
 
         // Set any remaining jobs' status to rendering
         for(int i = 0; i < localjobs->num_jobs; i++) {
-            if(localjobs->jobs[i].status == ANAX_STATE_LOADED)
+            if(localjobs->jobs[i].status == ANAX_STATE_LOADED && 
+               localjobs->jobs[i].frame_coordinates.N_set != 2 &&
+               localjobs->jobs[i].frame_coordinates.S_set != 2 &&
+               localjobs->jobs[i].frame_coordinates.E_set != 2 &&
+               localjobs->jobs[i].frame_coordinates.W_set != 2 &&
+               localjobs->jobs[i].frame_coordinates.NE_set != 2 &&
+               localjobs->jobs[i].frame_coordinates.SE_set != 2 &&
+               localjobs->jobs[i].frame_coordinates.SW_set != 2 &&
+               localjobs->jobs[i].frame_coordinates.NW_set != 2)
                 localjobs->jobs[i].status = ANAX_STATE_RENDERING;
         }
         printf("All data is ready. Proceeding to rendering phase.\n");
@@ -320,10 +333,11 @@ int main(int argc, char *argv[]) {
             for(int i = 0; i < localjobs->num_jobs; i++) {
                 anaxjob_t *current_job = &(localjobs->jobs[i]);
                 if(current_job->status == ANAX_STATE_RENDERING) {
+                    printf("Rendering map %i\n", i);
+                    
                     // Load the map
                     geotiffmap_t *map;
                     readMapData(current_job, &map);
-                    sprintf(current_job->outfile + strlen(current_job->outfile) - 3, "png");
                     
                     // Scale
                     if(scale != 1.0)
@@ -344,41 +358,14 @@ int main(int argc, char *argv[]) {
                     freeMap(map);
                 }
             }
+            sleep(2);
         }
+        
+        // Stitch together images
     
-
-/*
-        // Handle receipt of distributed rendering job
-
-    
-            // Load data from GeoTIFF
-            geotiffmap_t *map;
-            err = initMap(&map, srctiff, srcfile, 0);
-            if(err)
-                exit(err);
-            
-            // Get corners
-            double top, bottom, left, right;
-            getCorners(map, &top, &bottom, &left, &right);
-            sendCorners(outsocketfd, top, bottom, left, right);
-            
-            // Scale
-            if(scale != 1.0)
-                scaleImage(&map, scale);
-            
-            // Colorize
-            colorize(map, colorscheme);
-            
-            // Close TIFF
-            XTIFFClose(srctiff);
-            
-            // Render PNG
-            renderPNG(map, outfile, 0);
-            
-            // Return PNG to primary node
-            returnPNG(outsocketfd, outfile);
-        }
-*/
+		// Wait for render merge request
+        sleep(1000);
+		
 	} else {
 	    // Handle local rendering
 

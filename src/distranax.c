@@ -657,6 +657,7 @@ int getGeoTIFF(int outsocket, joblist_t *localjobs) {
         strncpy(current_job->name, (char *)(buf + sizeof(tiff_hdr_t)), hdr->string_length);
         current_job->index = hdr->index;
         current_job->status = ANAX_STATE_PENDING;
+        pthread_mutex_init(&(current_job->file_mutex), NULL);
 
         // Get and store what will be the file's local location
         char *filename_without_path = strrchr(current_job->name, '/');
@@ -788,21 +789,23 @@ int sendStatusUpdate(int outsocket, destinationlist_t *remotenodes, anaxjob_t *c
 int queryForMapFrameLocal(anaxjob_t *current_job, joblist_t *localjobs) {
     geotiffmap_t *current_map = NULL;
     geotiffmap_t *other_map = NULL;
+    pthread_mutex_lock(&(current_job->file_mutex));
     readMapData(current_job, &current_map);
     
     // North
     printf("North\n");
     if(!current_job->frame_coordinates.N_set) {
         for(int i = 0; i < localjobs->num_jobs; i++) {
-            printf("%f > %f\n%f < %f\n%f > %f\n%f < %f\n\n", current_job->frame_coordinates.north_lat, localjobs->jobs[i].bottom_lat,current_job->frame_coordinates.north_lat, localjobs->jobs[i].top_lat, current_job->frame_coordinates.mid_lon, localjobs->jobs[i].left_lon, current_job->frame_coordinates.mid_lon, localjobs->jobs[i].right_lon);
             if(current_job->frame_coordinates.north_lat > localjobs->jobs[i].bottom_lat && 
                current_job->frame_coordinates.north_lat < localjobs->jobs[i].top_lat &&
                current_job->frame_coordinates.mid_lon > localjobs->jobs[i].left_lon &&
                current_job->frame_coordinates.mid_lon < localjobs->jobs[i].right_lon) {
+                pthread_mutex_lock(&(localjobs->jobs[i].file_mutex));
                 readMapData(&(localjobs->jobs[i]), &other_map);
+                pthread_mutex_unlock(&(localjobs->jobs[i].file_mutex));
                 for(int j = 0; j < MAPFRAME; j++) {
                     for(int k = MAPFRAME; k < current_map->width + MAPFRAME; k++) {
-                        current_map->data[j][k].elevation = other_map->data[other_map->height + MAPFRAME + j][k].elevation;
+                        current_map->data[j][k].elevation = other_map->data[other_map->height + j][k].elevation;
                     }
                 }
                 freeMap(other_map);
@@ -820,10 +823,12 @@ int queryForMapFrameLocal(anaxjob_t *current_job, joblist_t *localjobs) {
                current_job->frame_coordinates.south_lat > localjobs->jobs[i].bottom_lat &&
                current_job->frame_coordinates.mid_lon > localjobs->jobs[i].left_lon &&
                current_job->frame_coordinates.mid_lon < localjobs->jobs[i].right_lon) {
+                pthread_mutex_lock(&(localjobs->jobs[i].file_mutex));
                 readMapData(&(localjobs->jobs[i]), &other_map);
+                pthread_mutex_unlock(&(localjobs->jobs[i].file_mutex));
                 for(int j = current_map->height + MAPFRAME; j < current_map->height + (2 * MAPFRAME); j++) {
                     for(int k = MAPFRAME; k < current_map->width + MAPFRAME; k++) {
-                        current_map->data[j][k].elevation = other_map->data[j - other_map->height - MAPFRAME][k].elevation;
+                        current_map->data[j][k].elevation = other_map->data[j - other_map->height][k].elevation;
                     }
                 }
                 freeMap(other_map);
@@ -841,10 +846,12 @@ int queryForMapFrameLocal(anaxjob_t *current_job, joblist_t *localjobs) {
                current_job->frame_coordinates.east_lon < localjobs->jobs[i].right_lon &&
                current_job->frame_coordinates.mid_lat > localjobs->jobs[i].bottom_lat &&
                current_job->frame_coordinates.mid_lat < localjobs->jobs[i].top_lat) {
+                pthread_mutex_lock(&(localjobs->jobs[i].file_mutex));
                 readMapData(&(localjobs->jobs[i]), &other_map);
+                pthread_mutex_unlock(&(localjobs->jobs[i].file_mutex));
                 for(int j = MAPFRAME; j < current_map->height + MAPFRAME; j++) {
                     for(int k = current_map->width + MAPFRAME; k < current_map->width + (2 * MAPFRAME); k++) {
-                        current_map->data[j][k].elevation = other_map->data[j][k - other_map->width - MAPFRAME].elevation;
+                        current_map->data[j][k].elevation = other_map->data[j][k - other_map->width].elevation;
                     }
                 }
                 freeMap(other_map);
@@ -862,10 +869,12 @@ int queryForMapFrameLocal(anaxjob_t *current_job, joblist_t *localjobs) {
                current_job->frame_coordinates.west_lon > localjobs->jobs[i].right_lon &&
                current_job->frame_coordinates.mid_lat > localjobs->jobs[i].bottom_lat &&
                current_job->frame_coordinates.mid_lat < localjobs->jobs[i].top_lat) {
+                pthread_mutex_lock(&(localjobs->jobs[i].file_mutex));
                 readMapData(&(localjobs->jobs[i]), &other_map);
+                pthread_mutex_unlock(&(localjobs->jobs[i].file_mutex));
                 for(int j = MAPFRAME; j < current_map->height + MAPFRAME; j++) {
                     for(int k = 0; k < MAPFRAME; k++) {
-                        current_map->data[j][k].elevation = other_map->data[j][other_map->width + MAPFRAME + k].elevation;
+                        current_map->data[j][k].elevation = other_map->data[j][other_map->width + k].elevation;
                     }
                 }
                 freeMap(other_map);
@@ -883,10 +892,12 @@ int queryForMapFrameLocal(anaxjob_t *current_job, joblist_t *localjobs) {
                current_job->frame_coordinates.east_lon < localjobs->jobs[i].right_lon &&
                current_job->frame_coordinates.north_lat > localjobs->jobs[i].bottom_lat &&
                current_job->frame_coordinates.north_lat < localjobs->jobs[i].top_lat) {
+                pthread_mutex_lock(&(localjobs->jobs[i].file_mutex));
                 readMapData(&(localjobs->jobs[i]), &other_map);
+                pthread_mutex_unlock(&(localjobs->jobs[i].file_mutex));
                 for(int j = 0; j < MAPFRAME; j++) {
                     for(int k = current_map->width + MAPFRAME; k < current_map->width + (2 * MAPFRAME); k++) {
-                        current_map->data[j][k].elevation = other_map->data[other_map->height + MAPFRAME + j][k - other_map->width - MAPFRAME].elevation;
+                        current_map->data[j][k].elevation = other_map->data[other_map->height + j][k - other_map->width].elevation;
                     }
                 }
                 freeMap(other_map);
@@ -904,10 +915,12 @@ int queryForMapFrameLocal(anaxjob_t *current_job, joblist_t *localjobs) {
                current_job->frame_coordinates.east_lon < localjobs->jobs[i].right_lon &&
                current_job->frame_coordinates.south_lat > localjobs->jobs[i].bottom_lat &&
                current_job->frame_coordinates.south_lat < localjobs->jobs[i].top_lat) {
+                pthread_mutex_lock(&(localjobs->jobs[i].file_mutex));
                 readMapData(&(localjobs->jobs[i]), &other_map);
+                pthread_mutex_unlock(&(localjobs->jobs[i].file_mutex));
                 for(int j = current_map->height + MAPFRAME; j < current_map->height + (2 * MAPFRAME); j++) {
                     for(int k = current_map->width + MAPFRAME; k < current_map->width + (2 * MAPFRAME); k++) {
-                        current_map->data[j][k].elevation = other_map->data[j - other_map->height - MAPFRAME][k - other_map->width - MAPFRAME].elevation;
+                        current_map->data[j][k].elevation = other_map->data[j - other_map->height][k - other_map->width].elevation;
                     }
                 }
                 freeMap(other_map);
@@ -925,10 +938,12 @@ int queryForMapFrameLocal(anaxjob_t *current_job, joblist_t *localjobs) {
                current_job->frame_coordinates.west_lon > localjobs->jobs[i].left_lon &&
                current_job->frame_coordinates.south_lat > localjobs->jobs[i].bottom_lat &&
                current_job->frame_coordinates.south_lat < localjobs->jobs[i].top_lat) {
+                pthread_mutex_lock(&(localjobs->jobs[i].file_mutex));
                 readMapData(&(localjobs->jobs[i]), &other_map);
+                pthread_mutex_unlock(&(localjobs->jobs[i].file_mutex));
                 for(int j = current_map->height + MAPFRAME; j < current_map->height + (2 * MAPFRAME); j++) {
                     for(int k = 0; k < MAPFRAME; k++) {
-                        current_map->data[j][k].elevation = other_map->data[j - other_map->height - MAPFRAME][other_map->width + MAPFRAME + k].elevation;
+                        current_map->data[j][k].elevation = other_map->data[j - other_map->height][other_map->width + k].elevation;
                     }
                 }
                 freeMap(other_map);
@@ -946,10 +961,12 @@ int queryForMapFrameLocal(anaxjob_t *current_job, joblist_t *localjobs) {
                current_job->frame_coordinates.west_lon > localjobs->jobs[i].left_lon &&
                current_job->frame_coordinates.north_lat > localjobs->jobs[i].bottom_lat &&
                current_job->frame_coordinates.north_lat < localjobs->jobs[i].top_lat) {
+                pthread_mutex_lock(&(localjobs->jobs[i].file_mutex));
                 readMapData(&(localjobs->jobs[i]), &other_map);
+                pthread_mutex_unlock(&(localjobs->jobs[i].file_mutex));
                 for(int j = 0; j < MAPFRAME; j++) {
                     for(int k = 0; k < MAPFRAME; k++) {
-                        current_map->data[j][k].elevation = other_map->data[other_map->height + MAPFRAME + j][other_map->width + MAPFRAME + k].elevation;
+                        current_map->data[j][k].elevation = other_map->data[other_map->height + j][other_map->width + k].elevation;
                     }
                 }
                 freeMap(other_map);
@@ -973,6 +990,7 @@ int queryForMapFrameLocal(anaxjob_t *current_job, joblist_t *localjobs) {
     
     // Write the map
     writeMapData(current_job, current_map);
+    pthread_mutex_unlock(&(current_job->file_mutex));
     
     // Free the map
     if(current_map)
@@ -1031,8 +1049,8 @@ int queryForMapFrame(anaxjob_t *current_job, destinationlist_t *remotenodes) {
     if(!current_job->frame_coordinates.W_set) {
         for(int i = 0; i < remotenodes->num_destinations; i++) {
             for(int j = 0; j < remotenodes->destinations[i].num_jobs; j++) {
-                if(current_job->frame_coordinates.west_lon < remotenodes->destinations[i].jobs[j]->left_lon &&
-                   current_job->frame_coordinates.west_lon > remotenodes->destinations[i].jobs[j]->right_lon &&
+                if(current_job->frame_coordinates.west_lon > remotenodes->destinations[i].jobs[j]->left_lon &&
+                   current_job->frame_coordinates.west_lon < remotenodes->destinations[i].jobs[j]->right_lon &&
                    current_job->frame_coordinates.mid_lat > remotenodes->destinations[i].jobs[j]->bottom_lat &&
                    current_job->frame_coordinates.mid_lat < remotenodes->destinations[i].jobs[j]->top_lat) {
                     requestMapFrame(current_job, &(remotenodes->destinations[i]), j, ANAX_MAP_EAST);
@@ -1106,6 +1124,8 @@ int queryForMapFrame(anaxjob_t *current_job, destinationlist_t *remotenodes) {
 }
 
 int requestMapFrame(anaxjob_t *current_job, destination_t *remote, int index, int request) {
+    printf("Requesting frame\n");
+
     // Allocate a frame request header
     req_edge_hdr_t *hdr = malloc(sizeof(req_edge_hdr_t));
     
@@ -1175,6 +1195,7 @@ void *handleSharing(void *argt) {
     int *global_min = ((threadshare_t *)argt)->global_min;
     int whoami = ((threadshare_t *)argt)->whoami;
     int socket = ((threadshare_t *)argt)->socket;
+    pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
     
     // Handle incoming requests
     while(1) {
@@ -1223,27 +1244,31 @@ void *handleSharing(void *argt) {
             {
                 req_edge_hdr_t *hdr = (req_edge_hdr_t *)buf;
                 
+                printf("Got req\n");
+                
                 // Load requested map from memory
                 geotiffmap_t *map;
                 for(int i = 0; i < localjobs->num_jobs; i++) {
                     if(localjobs->jobs[i].index == hdr->requested_job_id) {
+                        pthread_mutex_lock(&(localjobs->jobs[i].file_mutex));
                         readMapData(&(localjobs->jobs[i]), &map);
+                        pthread_mutex_unlock(&(localjobs->jobs[i].file_mutex));
                         break;
                     }
                 }
                 
                 // Identify and pack the desired data
                 int nrows, ncols;
-                int16_t *buf;
+                int16_t *databuf;
                 int pos = 0;
                 switch(hdr->part) {
                     case ANAX_MAP_NORTH:
                         nrows = MAPFRAME;
                         ncols = map->width;
-                        buf = calloc(nrows * ncols, sizeof(int16_t));
-                        for(int i = 0; i < nrows; i++) {
+                        databuf = calloc(nrows * ncols, sizeof(int16_t));
+                        for(int i = MAPFRAME; i < MAPFRAME + nrows; i++) {
                             for(int j = MAPFRAME; j < ncols + MAPFRAME; j++) {
-                                buf[pos] = map->data[i][j].elevation;
+                                databuf[pos] = map->data[i][j].elevation;
                                 pos++;
                             }
                         }
@@ -1251,10 +1276,10 @@ void *handleSharing(void *argt) {
                     case ANAX_MAP_SOUTH:
                         nrows = MAPFRAME;
                         ncols = map->width;
-                        buf = calloc(nrows * ncols, sizeof(int16_t));
-                        for(int i = MAPFRAME + nrows; i < (MAPFRAME * 2) + nrows; i++) {
+                        databuf = calloc(nrows * ncols, sizeof(int16_t));
+                        for(int i = map->height; i < map->height + nrows; i++) {
                             for(int j = MAPFRAME; j < ncols + MAPFRAME; j++) {
-                                buf[pos] = map->data[i][j].elevation;
+                                databuf[pos] = map->data[i][j].elevation;
                                 pos++;
                             }
                         }
@@ -1262,10 +1287,10 @@ void *handleSharing(void *argt) {
                     case ANAX_MAP_EAST:
                         nrows = map->height;
                         ncols = MAPFRAME;
-                        buf = calloc(nrows * ncols, sizeof(int16_t));
+                        databuf = calloc(nrows * ncols, sizeof(int16_t));
                         for(int i = MAPFRAME; i < MAPFRAME + nrows; i++) {
-                            for(int j = MAPFRAME + ncols; j < (MAPFRAME * 2) + ncols; j++) {
-                                buf[pos] = map->data[i][j].elevation;
+                            for(int j = map->width; j < map->width + ncols; j++) {
+                                databuf[pos] = map->data[i][j].elevation;
                                 pos++;
                             }
                         }
@@ -1273,10 +1298,10 @@ void *handleSharing(void *argt) {
                     case ANAX_MAP_WEST:
                         nrows = map->height;
                         ncols = MAPFRAME;
-                        buf = calloc(nrows * ncols, sizeof(int16_t));
+                        databuf = calloc(nrows * ncols, sizeof(int16_t));
                         for(int i = MAPFRAME; i < MAPFRAME + nrows; i++) {
-                            for(int j = 0; j < ncols; j++) {
-                                buf[pos] = map->data[i][j].elevation;
+                            for(int j = MAPFRAME; j < MAPFRAME + ncols; j++) {
+                                databuf[pos] = map->data[i][j].elevation;
                                 pos++;
                             }
                         }
@@ -1284,10 +1309,10 @@ void *handleSharing(void *argt) {
                     case ANAX_MAP_NORTHEAST:
                         nrows = MAPFRAME;
                         ncols = MAPFRAME;
-                        buf = calloc(nrows * ncols, sizeof(int16_t));
-                        for(int i = 0; i < nrows; i++) {
-                            for(int j = MAPFRAME + map->width; j < MAPFRAME + map->width + ncols; j++) {
-                                buf[pos] = map->data[i][j].elevation;
+                        databuf = calloc(nrows * ncols, sizeof(int16_t));
+                        for(int i = MAPFRAME; i < MAPFRAME + nrows; i++) {
+                            for(int j = map->width; j < map->width + ncols; j++) {
+                                databuf[pos] = map->data[i][j].elevation;
                                 pos++;
                             }
                         }
@@ -1295,10 +1320,10 @@ void *handleSharing(void *argt) {
                     case ANAX_MAP_SOUTHEAST:
                         nrows = MAPFRAME;
                         ncols = MAPFRAME;
-                        buf = calloc(nrows * ncols, sizeof(int16_t));
-                        for(int i = MAPFRAME + map->height; i < MAPFRAME + map->height + nrows; i++) {
-                            for(int j = MAPFRAME + map->width; j < MAPFRAME + map->width + ncols; j++) {
-                                buf[pos] = map->data[i][j].elevation;
+                        databuf = calloc(nrows * ncols, sizeof(int16_t));
+                        for(int i = map->height; i < map->height + nrows; i++) {
+                            for(int j = map->width; j < map->width + ncols; j++) {
+                                databuf[pos] = map->data[i][j].elevation;
                                 pos++;
                             }
                         }
@@ -1306,10 +1331,10 @@ void *handleSharing(void *argt) {
                     case ANAX_MAP_SOUTHWEST:
                         nrows = MAPFRAME;
                         ncols = MAPFRAME;
-                        buf = calloc(nrows * ncols, sizeof(int16_t));
-                        for(int i = MAPFRAME + map->height; i < MAPFRAME + map->height + nrows; i++) {
-                            for(int j = 0; j < ncols; j++) {
-                                buf[pos] = map->data[i][j].elevation;
+                        databuf = calloc(nrows * ncols, sizeof(int16_t));
+                        for(int i = map->height; i < map->height + nrows; i++) {
+                            for(int j = MAPFRAME; j < MAPFRAME + ncols; j++) {
+                                databuf[pos] = map->data[i][j].elevation;
                                 pos++;
                             }
                         }
@@ -1317,10 +1342,10 @@ void *handleSharing(void *argt) {
                     case ANAX_MAP_NORTHWEST:
                         nrows = MAPFRAME;
                         ncols = MAPFRAME;
-                        buf = calloc(nrows * ncols, sizeof(int16_t));
+                        databuf = calloc(nrows * ncols, sizeof(int16_t));
                         for(int i = MAPFRAME; i < MAPFRAME + nrows; i++) {
                             for(int j = MAPFRAME; j < MAPFRAME + ncols; j++) {
-                                buf[pos] = map->data[i][j].elevation;
+                                databuf[pos] = map->data[i][j].elevation;
                                 pos++;
                             }
                         }
@@ -1334,48 +1359,79 @@ void *handleSharing(void *argt) {
                 outhdr->packet_size = (uint32_t)sizeof(send_edge_hdr_t);
                 outhdr->type = HDR_SEND_EDGE;
                 outhdr->part = hdr->part;
-                outhdr->datasize = (uint16_t)(nrows * ncols);
                 outhdr->requesting_job_id = hdr->requesting_job_id;
                 outhdr->requested_job_id = hdr->requested_job_id;
-                
-                // Send the response and data
+                outhdr->datasize = (uint32_t)(nrows * ncols);
+
+                // Identify the sender
+                int sender = -1;
+                for(int i = 0; i < remotenodes->num_destinations; i++) {
+                    for(int j = 0; j < remotenodes->destinations[i].num_jobs; j++) {
+                        if(remotenodes->destinations[i].jobs[j]->index == hdr->requesting_job_id) {
+                            sender = i;
+                            break;
+                        }
+                    }
+                    if(sender > 0)
+                        break;
+                }
+
+                // Send the response
                 int bytes_sent = 0;
                 while(bytes_sent < sizeof(send_edge_hdr_t)) {
-                    bytes_sent += send(socket, outhdr, sizeof(send_edge_hdr_t) - bytes_sent, 0);
-                }
-                bytes_sent = 0;
-                while(bytes_sent < nrows * ncols) {
-                    bytes_sent += send(socket, buf, (nrows * ncols) - bytes_sent, 0);
+                    bytes_sent += send(remotenodes->destinations[sender].socketfd, outhdr, sizeof(send_edge_hdr_t) - bytes_sent, 0);
                 }
                 
+                // Send the data
+                mapframe_threadarg_t *argt = malloc(sizeof(mapframe_threadarg_t));
+                argt->socket = remotenodes->destinations[sender].socketfd;
+                argt->numbytes = nrows * ncols * sizeof(int16_t);
+                argt->lock = &lock;
+                argt->buf = databuf;
+                pthread_t framethread;
+                pthread_create(&framethread, NULL, sendMapFrame, argt);
+
+/*
+                bytes_sent = 0;
+                while(bytes_sent < nrows * ncols * 2) {
+                    bytes_sent += send(socket, databuf, (nrows * ncols * 2) - bytes_sent, 0);
+                }
+*/
+
                 freeMap(map);
                 break;
             }
             case HDR_SEND_EDGE:
             {
+                printf("Got req rep\n");
+                
+                send_edge_hdr_t *hdr = (send_edge_hdr_t *)buf;
+                
                 // Get the header
                 int bytes_rcvd = 0;
-                send_edge_hdr_t *hdr = malloc(sizeof(send_edge_hdr_t));
-                while(bytes_rcvd < sizeof(send_edge_hdr_t)) {
-                    bytes_rcvd += recv(socket, hdr, sizeof(send_edge_hdr_t) - bytes_rcvd, 0);
-                }
+                //send_edge_hdr_t *hdr = malloc(sizeof(send_edge_hdr_t));
+                //while(bytes_rcvd < sizeof(send_edge_hdr_t)) {
+                //    bytes_rcvd += recv(socket, hdr, sizeof(send_edge_hdr_t) - bytes_rcvd, 0);
+                //}
                 
                 // Get the data
-                uint8_t *databuf = calloc(hdr->datasize, sizeof(uint8_t));
+                uint16_t *databuf = calloc(hdr->datasize, sizeof(uint16_t));
                 bytes_rcvd = 0;
-                while(bytes_rcvd < hdr->datasize) {
+                while(bytes_rcvd < hdr->datasize * 2) {
                     bytes_rcvd += recv(socket, databuf, hdr->datasize - bytes_rcvd, 0);
                 }
                 
                 // Load the map
-                // TODO: there need to be locks here
                 geotiffmap_t *map;
                 anaxjob_t *current_job;
                 for(int i = 0; i < localjobs->num_jobs; i++) {
                     if(localjobs->jobs[i].index == hdr->requesting_job_id)
                         current_job = &(localjobs->jobs[i]);
                 }
+                //pthread_mutex_lock(&(current_job->file_mutex));
                 readMapData(current_job, &map);
+                
+                printf("Data received\n");
                 
                 // Add the new data
                 int pos = 0;
@@ -1480,11 +1536,13 @@ void *handleSharing(void *argt) {
                 
                 // Write the map
                 writeMapData(current_job, map);
+                //pthread_mutex_unlock(&(current_job->file_mutex));
                 
                 // Free the map
                 freeMap(map);
                 
                 // Check if map is now complete
+                printf("(N %i) (S %i) (E %i) (W %i) (NE %i) (SE %i) (SW %i) (NW %i)\n", current_job->frame_coordinates.N_set, current_job->frame_coordinates.S_set, current_job->frame_coordinates.E_set, current_job->frame_coordinates.W_set, current_job->frame_coordinates.NE_set, current_job->frame_coordinates.SE_set, current_job->frame_coordinates.SW_set, current_job->frame_coordinates.NW_set);
                 if(current_job->frame_coordinates.N_set &&
                   current_job->frame_coordinates.S_set &&
                   current_job->frame_coordinates.E_set &&
@@ -1504,11 +1562,40 @@ void *handleSharing(void *argt) {
                 *global_min = (*global_min > hdr->min) ? *global_min : hdr->min;
                 break;
             }
+            default:
+                printf("Unknown type: %i\n", buf[4]);
         }
         
         free(buf);
     }
 }
+
+void *sendMapFrame(void *argt) {
+    int socket = ((mapframe_threadarg_t *)argt)->socket;
+    int numbytes = ((mapframe_threadarg_t *)argt)->socket;
+    pthread_mutex_t *lock = ((mapframe_threadarg_t *)argt)->lock;
+    int16_t *buf = ((mapframe_threadarg_t *)argt)->buf;
+    
+    pthread_mutex_lock(lock);
+    int bytes_sent = 0;
+    while(bytes_sent < numbytes) {
+        bytes_sent += send(socket, buf, numbytes - bytes_sent, 0);
+    }
+    pthread_mutex_unlock(lock);
+    
+    printf("Sent %i bytes to socket %i\n", numbytes, socket);
+    
+    free(argt);
+    
+    return 0;
+}
+
+
+
+
+
+
+
 
 int returnPNG(int outsocket, char *filename) {
     // Get the file size
@@ -1583,5 +1670,3 @@ int getJobIndex(destination_t *dest, int index) {
     
     return -1;
 }
-
-

@@ -62,9 +62,11 @@ typedef struct frame_coords frame_coords_t;
 
 struct anaxjob {
 	char *name;
+	char *tmpfile;
     char *outfile;
 	int index;
 	int status;
+	pthread_mutex_t file_mutex;
 	double top_lat;
 	double bottom_lat;
 	double right_lon;

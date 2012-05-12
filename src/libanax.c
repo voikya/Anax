@@ -505,15 +505,15 @@ int getCorners(geotiffmap_t *map, double *top, double *bottom, double *left, dou
 }
 
 int writeMapData(anaxjob_t *current_job, geotiffmap_t *map) {
-    FILE *fp = fopen(current_job->outfile, "w+");
+    FILE *fp = fopen(current_job->tmpfile, "w+");
     
     uint32_t hdr[4];
-    hdr[0] = map->height;
-    hdr[1] = map->width;
+    hdr[0] = (uint32_t)(map->height);
+    hdr[1] = (uint32_t)(map->width);
     hdr[2] = map->max_elevation;
     hdr[3] = map->min_elevation;
     fwrite(hdr, sizeof(uint32_t), 4, fp);
-    
+
     int bufsize = map->width + (2 * MAPFRAME);
     int16_t buf[bufsize];
     for(int i = 0; i < map->height + (2 * MAPFRAME); i++) {
@@ -529,7 +529,7 @@ int writeMapData(anaxjob_t *current_job, geotiffmap_t *map) {
 }
 
 int readMapData(anaxjob_t *current_job, geotiffmap_t **map) {
-    FILE *fp = fopen(current_job->outfile, "r");
+    FILE *fp = fopen(current_job->tmpfile, "r");
 
 	// Allocate main map struct
 	*map = malloc(sizeof(geotiffmap_t));
@@ -538,8 +538,8 @@ int readMapData(anaxjob_t *current_job, geotiffmap_t **map) {
     uint32_t hdr[4];
     fread(hdr, sizeof(uint32_t), 4, fp);
     (*map)->name = current_job->name;
-    (*map)->height = (int)hdr[0];
-    (*map)->width = (int)hdr[1];
+    (*map)->height = hdr[0];
+    (*map)->width = hdr[1];
     (*map)->max_elevation = (int16_t)hdr[2];
     (*map)->min_elevation = (int16_t)hdr[3];
 
