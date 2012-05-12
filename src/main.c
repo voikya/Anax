@@ -356,10 +356,22 @@ int main(int argc, char *argv[]) {
                     
                     // Free the map
                     freeMap(map);
+                } else if(localjobs->jobs[i].status == ANAX_STATE_LOADED && 
+                           current_job->frame_coordinates.N_set != 2 &&
+                           current_job->frame_coordinates.S_set != 2 &&
+                           current_job->frame_coordinates.E_set != 2 &&
+                           current_job->frame_coordinates.W_set != 2 &&
+                           current_job->frame_coordinates.NE_set != 2 &&
+                           current_job->frame_coordinates.SE_set != 2 &&
+                           current_job->frame_coordinates.SW_set != 2 &&
+                           current_job->frame_coordinates.NW_set != 2) {
+                    current_job->status = ANAX_STATE_RENDERING;
                 }
             }
             sleep(2);
         }
+        
+        printf("Rendering complete\n");
         
         // Stitch together images
     

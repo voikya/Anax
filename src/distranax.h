@@ -165,16 +165,6 @@ struct header_png {
 };
 typedef struct header_png png_hdr_t;
 
-// TODO: Deprecated
-struct header {
-    uint16_t packet_size;
-    uint16_t str_size;
-    uint16_t num_colors;
-    uint8_t is_abs;
-    uint8_t fill;
-    double scale;
-};
-
 /////
 // FUNCTION DECLARATIONS
 /////

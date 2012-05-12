@@ -359,40 +359,6 @@ int scaleImage(geotiffmap_t **map, double scale) {
 		}
 	}
 
-/*	// Scale the image
-	for(int r = MAPFRAME; r < newmap->height + MAPFRAME; r++) {
-		for(int c = MAPFRAME; c < newmap->width + MAPFRAME; c++) {
-			memset(box, 0, step_vert * step_horiz * sizeof(int16_t));
-
-			// Set up the box
-			int16_t box_firstrow = (int)((r * step_vert) - ((step_vert - 1) / 2));
-			int16_t box_firstcol = (int)((c * step_horiz) - ((step_horiz - 1) / 2));
-			long int sum = 0;
-			int cellcount = 0;
-			for(int boxr = 0; boxr < (int)step_vert; boxr++) {
-				for(int boxc = 0; boxc < (int)step_horiz; boxc++) {
-					box[boxr][boxc] = (*map)->data[box_firstrow + boxr][box_firstcol + boxc].elevation;
-					if(box[boxr][boxc] != -9999) {
-					    sum += box[boxr][boxc];
-					    cellcount++;
-					}
-					
-					if((box_firstrow + boxr >= 0) && (box_firstcol + boxc >= 0) && (box_firstrow + boxr < (*map)->height) && (box_firstcol + boxc < (*map)->width)) {
-						box[boxr][boxc] = (*map)->data[box_firstrow + boxr][box_firstcol + boxc].elevation;
-						sum += box[boxr][boxc];
-						cellcount++;
-					} else {
-						box[boxr][boxc] = -9999;
-					}
-					
-				}
-			}
-
-			// Average the elevation and save the value
-			newmap->data[r][c].elevation = sum / cellcount;
-		}
-	}*/
-
 	// Copy over metadata from the old map struct that has not changed
 	newmap->name = calloc(strlen((*map)->name) + 1, sizeof(char));
 	strncpy(newmap->name, (*map)->name, strlen((*map)->name));

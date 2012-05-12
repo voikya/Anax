@@ -388,118 +388,6 @@ void *runRemoteNode(void *argt) {
     return 0;
 }
 
-/*
-void *runRemoteJob(void *argt) {
-    destination_t *destination = ((threadarg_t *)argt)->dest;
-    anaxjob_t *job = ((threadarg_t *)argt)->job;
-    colorscheme_t *colorscheme = ((threadarg_t *)argt)->colorscheme;
-    double scale = ((threadarg_t *)argt)->scale;
-    
-    // Send data to remote machine for initial setup
-    // 2 - packet size
-    // 2 - str size
-    // 2 - num colors
-    // 1 - isAbs
-    // 1 - 000
-    // 8 - scale
-    // * - name
-    // * - colors (E: 2, R: 1, G: 1, B: 1, A: 8)
-    int num_bytes = 16 + strlen(job->name) + (colorscheme->num_stops * 13);
-    uint8_t *outbuf = calloc(num_bytes, sizeof(uint8_t));
-    struct header *hdr = (struct header *)outbuf;
-    hdr->packet_size = (uint16_t)num_bytes;
-    hdr->str_size = (uint16_t)strlen(job->name);
-    hdr->num_colors = (uint16_t)(colorscheme->num_stops);
-    hdr->is_abs = (uint8_t)(colorscheme->isAbsolute);
-    hdr->scale = scale;
-    memcpy(outbuf + 16, job->name, strlen(job->name));
-    for(int i = 1; i <= colorscheme->num_stops; i++) {
-        struct compressed_color *comp_c = (struct compressed_color *)(outbuf + 16 + strlen(job->name) + ((i - 1) * 13));
-        comp_c->elevation = (int16_t)(colorscheme->colors[i].elevation);
-        comp_c->red = (uint8_t)(colorscheme->colors[i].color.r);
-        comp_c->green = (uint8_t)(colorscheme->colors[i].color.g);
-        comp_c->blue = (uint8_t)(colorscheme->colors[i].color.b);
-        comp_c->alpha = (double)(colorscheme->colors[i].color.a);
-    }
-    
-    int bytes_sent = 0;
-    while(bytes_sent < num_bytes) {
-        bytes_sent += send(destination->socketfd, outbuf + bytes_sent, num_bytes - bytes_sent, 0);
-    }
-    
-    // Transmit the GeoTIFF, if necessary
-    if(!strstr(job->name, "http://")) {
-        // Get the file size
-        FILE *fp = fopen(job->name, "r");
-        fseek(fp, 0L, SEEK_END);
-        num_bytes = ftell(fp);
-        rewind(fp);
-        
-        // Send the file size
-        bytes_sent = 0;
-        while(bytes_sent < sizeof(uint32_t)) {
-            bytes_sent += send(destination->socketfd, &num_bytes, 4, 0);
-        }
-        
-        // Send the file
-        bytes_sent = 0;
-        uint8_t buf[8192];
-        while(bytes_sent < num_bytes) {
-            int bytes_sent_tmp = 0;
-            int bytes_to_send = fread(buf, sizeof(uint8_t), 8192, fp);
-            while(bytes_sent_tmp < bytes_to_send) {
-                bytes_sent_tmp += send(destination->socketfd, buf, bytes_to_send - bytes_sent_tmp, 0);
-            }
-            bytes_sent += bytes_sent_tmp;
-        }
-    }
-    
-    // Receive information on corner coordinates from remote machine
-    double doublebuf[4];
-    int bytes_rcvd = 0;
-    while(bytes_rcvd < 4 * sizeof(double)) {
-        bytes_rcvd += recv(destination->socketfd, &doublebuf + bytes_rcvd, 4 * sizeof(double) - bytes_rcvd, 0);
-    }
-    job->top_lat = doublebuf[0];
-    job->bottom_lat = doublebuf[1];
-    job->left_lon = doublebuf[2];
-    job->right_lon = doublebuf[3];
-    
-    // Receive progress updates from remote machine
-    
-    // Receive output file from remote machine
-    char outfile[FILENAME_MAX];
-    sprintf(outfile, "/tmp/map%i.png", job->index);
-    FILE *fp = fopen(outfile, "w+");
-    
-    uint32_t filesize = 0;
-    bytes_rcvd = 0;
-    while(bytes_rcvd < 4) {
-        bytes_rcvd += recv(destination->socketfd, &filesize, 4 - bytes_rcvd, 0);
-    }
-
-    uint8_t buf[8192]; // 8 kilobytes
-    bytes_rcvd = 0;
-    while(bytes_rcvd < filesize) {
-        int bytes_rcvd_tmp = recv(destination->socketfd, buf, 8192, 0);
-        fwrite(buf, sizeof(uint8_t), bytes_rcvd_tmp, fp);
-        bytes_rcvd += bytes_rcvd_tmp;
-    }
-    
-    fclose(fp);
-
-    // Update local variables and signal main thread
-    pthread_mutex_lock(&ready_mutex);
-    destination->status = ANAX_STATE_NOJOB;
-    job->status = ANAX_STATE_COMPLETE;
-    pthread_cond_signal(&ready_cond);
-    pthread_mutex_unlock(&ready_mutex);
-    
-    //free(argt);
-    return NULL;
-}
-*/
-
 int initRemoteListener(int *socketfd, char *port) {
     // Get socket
     struct addrinfo hints, *res;
@@ -1391,13 +1279,6 @@ void *handleSharing(void *argt) {
                 pthread_t framethread;
                 pthread_create(&framethread, NULL, sendMapFrame, argt);
 
-/*
-                bytes_sent = 0;
-                while(bytes_sent < nrows * ncols * 2) {
-                    bytes_sent += send(socket, databuf, (nrows * ncols * 2) - bytes_sent, 0);
-                }
-*/
-
                 freeMap(map);
                 break;
             }
@@ -1418,7 +1299,7 @@ void *handleSharing(void *argt) {
                 uint16_t *databuf = calloc(hdr->datasize, sizeof(uint16_t));
                 bytes_rcvd = 0;
                 while(bytes_rcvd < hdr->datasize * 2) {
-                    bytes_rcvd += recv(socket, databuf, hdr->datasize - bytes_rcvd, 0);
+                    bytes_rcvd += recv(socket, databuf, (hdr->datasize * 2) - bytes_rcvd, 0);
                 }
                 
                 // Load the map
@@ -1542,7 +1423,6 @@ void *handleSharing(void *argt) {
                 freeMap(map);
                 
                 // Check if map is now complete
-                printf("(N %i) (S %i) (E %i) (W %i) (NE %i) (SE %i) (SW %i) (NW %i)\n", current_job->frame_coordinates.N_set, current_job->frame_coordinates.S_set, current_job->frame_coordinates.E_set, current_job->frame_coordinates.W_set, current_job->frame_coordinates.NE_set, current_job->frame_coordinates.SE_set, current_job->frame_coordinates.SW_set, current_job->frame_coordinates.NW_set);
                 if(current_job->frame_coordinates.N_set &&
                   current_job->frame_coordinates.S_set &&
                   current_job->frame_coordinates.E_set &&
@@ -1572,7 +1452,7 @@ void *handleSharing(void *argt) {
 
 void *sendMapFrame(void *argt) {
     int socket = ((mapframe_threadarg_t *)argt)->socket;
-    int numbytes = ((mapframe_threadarg_t *)argt)->socket;
+    int numbytes = ((mapframe_threadarg_t *)argt)->numbytes;
     pthread_mutex_t *lock = ((mapframe_threadarg_t *)argt)->lock;
     int16_t *buf = ((mapframe_threadarg_t *)argt)->buf;
     
@@ -1589,13 +1469,6 @@ void *sendMapFrame(void *argt) {
     
     return 0;
 }
-
-
-
-
-
-
-
 
 int returnPNG(int outsocket, char *filename) {
     // Get the file size
