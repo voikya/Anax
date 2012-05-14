@@ -1529,6 +1529,8 @@ void *returnPNGthread(void *argt) {
         bytes_sent += bytes_sent_tmp;
     }
     
+    pthread_mutex_unlock(&send_lock);
+    
     // Close the file and free memory
     fclose(png);
     free(hdr);
