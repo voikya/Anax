@@ -178,7 +178,8 @@ int main(int argc, char *argv[]) {
         err = initRemoteListener(&socketfd, REMOTE_PORT);
         struct sockaddr_in clientAddr;
         socklen_t sinSize = sizeof(struct sockaddr_in);
-        outsocketfd = accept(socketfd, (struct sockaddr *)&clientAddr, &sinSize);        
+        outsocketfd = accept(socketfd, (struct sockaddr *)&clientAddr, &sinSize);  
+	    pthread_mutex_init(&send_lock, NULL);
         
         // Receive and set up colorscheme and scale
         int whoami;
@@ -356,6 +357,10 @@ int main(int argc, char *argv[]) {
                     
                     // Free the map
                     freeMap(map);
+                    
+                    // Transmit the rendered image home
+                    returnPNG(outsocketfd, current_job);
+                    
                 } else if(localjobs->jobs[i].status == ANAX_STATE_LOADED && 
                            current_job->frame_coordinates.N_set != 2 &&
                            current_job->frame_coordinates.S_set != 2 &&

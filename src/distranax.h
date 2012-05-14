@@ -28,38 +28,6 @@
 #define ROLE_RECEIVER           2
 
 
-/////
-// PTHREAD ARGUMENT STRUCTS
-/////
-
-struct thread_arguments {
-    destination_t *dest;
-    uint8_t *init_pkt;
-    int init_pkt_size;
-    uint8_t *nodes_pkt;
-    int nodes_pkt_size;
-    int index;
-};
-typedef struct thread_arguments threadarg_t;
-
-struct share_arguments {
-    destinationlist_t *remotenodes;
-    joblist_t *localjobs;
-    int *global_max;
-    int *global_min;
-    int whoami;
-    int socket;
-};
-typedef struct share_arguments threadshare_t;
-
-struct mapframe_thread_arguments {
-    int socket;
-    int numbytes;
-    pthread_mutex_t *lock;
-    int16_t *buf;
-};
-typedef struct mapframe_thread_arguments mapframe_threadarg_t;
-
 
 /////
 // HEADER STRUCTS
@@ -156,7 +124,8 @@ typedef struct header_min_max min_max_hdr_t;
 struct header_png {
     uint32_t packet_size;
     uint8_t type; // HDR_PNG
-    uint8_t fill[3];
+    uint16_t index;
+    uint8_t fill;
     double top;
     double bottom;
     double left;
@@ -164,6 +133,47 @@ struct header_png {
     // Followed by data array
 };
 typedef struct header_png png_hdr_t;
+
+
+/////
+// PTHREAD ARGUMENT STRUCTS
+/////
+
+struct thread_arguments {
+    destination_t *dest;
+    uint8_t *init_pkt;
+    int init_pkt_size;
+    uint8_t *nodes_pkt;
+    int nodes_pkt_size;
+    int index;
+};
+typedef struct thread_arguments threadarg_t;
+
+struct share_arguments {
+    destinationlist_t *remotenodes;
+    joblist_t *localjobs;
+    int *global_max;
+    int *global_min;
+    int whoami;
+    int socket;
+};
+typedef struct share_arguments threadshare_t;
+
+struct mapframe_thread_arguments {
+    int socket;
+    int numbytes;
+    pthread_mutex_t *lock;
+    int16_t *buf;
+};
+typedef struct mapframe_thread_arguments mapframe_threadarg_t;
+
+struct png_thread_arguments {
+    int socket;
+    png_hdr_t *hdr;
+    FILE *png;
+};
+typedef struct png_thread_arguments png_threadarg_t;
+
 
 /////
 // FUNCTION DECLARATIONS
@@ -190,7 +200,8 @@ int sendMinMax(destinationlist_t *remotenodes, int local_min, int local_max, int
 void *spawnShareThread(void *argt);
 void *handleSharing(void *argt);
 void *sendMapFrame(void *argt);
-int returnPNG(int outsocket, char *filename);
+int returnPNG(int outsocket, anaxjob_t *job);
+void *returnPNGthread(void *argt);
 int countComplete(joblist_t *joblist);
 int countJobless(destinationlist_t *dests);
 int sendCorners(int outsocketfd, double top, double bottom, double left, double right);

@@ -41,6 +41,7 @@
 
 pthread_mutex_t ready_mutex;
 pthread_cond_t ready_cond;
+pthread_mutex_t send_lock;
 
 struct frame_coords {
     int N_set;

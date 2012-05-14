@@ -1470,34 +1470,71 @@ void *sendMapFrame(void *argt) {
     return 0;
 }
 
-int returnPNG(int outsocket, char *filename) {
+int returnPNG(int outsocket, anaxjob_t *job) {
     // Get the file size
-    FILE *fp = fopen(filename, "r");
+    FILE *fp = fopen(job->outfile, "r");
     fseek(fp, 0L, SEEK_END);
     int num_bytes = ftell(fp);
     rewind(fp);
     
-    // Send the file size
+    // Pack a PNG header
+    png_hdr_t *hdr = malloc(sizeof(png_hdr_t));
+    hdr->packet_size = sizeof(png_hdr_t) + num_bytes;
+    hdr->type = HDR_PNG;
+    hdr->index = job->index;
+    hdr->top = job->top_lat;
+    hdr->bottom = job->bottom_lat;
+    hdr->left = job->left_lon;
+    hdr->right = job->right_lon;
+    
+    // Open the PNG
+    FILE *png = fopen(job->outfile, "r");
+    
+    // Spawn a new thread to send the data
+    // (so that the program can continue processing)
+    png_threadarg_t *argt = malloc(sizeof(png_threadarg_t));
+    argt->socket = outsocket;
+    argt->hdr = hdr;
+    argt->png = png;
+    pthread_t thread;
+    pthread_create(&thread, NULL, returnPNGthread, argt);
+
+    return 0;
+}
+
+void *returnPNGthread(void *argt) {
+    // Unpack the thread arguments
+    int socket = ((png_threadarg_t *)argt)->socket;
+    png_hdr_t *hdr = ((png_threadarg_t *)argt)->hdr;
+    FILE *png = ((png_threadarg_t *)argt)->png;
+    
+    // Obtain a lock on the connection
+    // (to prevent multiple returnPNGthreads from working simultaneously)
+    pthread_mutex_lock(&send_lock);
+    
+    // Send the header
     int bytes_sent = 0;
-    while(bytes_sent < sizeof(uint32_t)) {
-        bytes_sent += send(outsocket, &num_bytes, 4, 0);
+    while(bytes_sent < sizeof(png_hdr_t)) {
+        bytes_sent += send(socket, (uint8_t*)hdr + bytes_sent, sizeof(png_hdr_t) - bytes_sent, 0);
     }
     
     // Send the file
-    bytes_sent = 0;
     uint8_t buf[8192];
-    while(bytes_sent < num_bytes) {
+    while(bytes_sent < sizeof(hdr->packet_size)) {
         int bytes_sent_tmp = 0;
-        int bytes_to_send = fread(buf, sizeof(uint8_t), 8192, fp);
+        int bytes_to_send = fread(buf, sizeof(uint8_t), 8192, png);
         while(bytes_sent_tmp < bytes_to_send) {
-            bytes_sent_tmp += send(outsocket, buf, bytes_to_send - bytes_sent_tmp, 0);
+            bytes_sent_tmp += send(socket, buf + bytes_sent_tmp, bytes_to_send - bytes_sent_tmp, 0);
         }
         bytes_sent += bytes_sent_tmp;
     }
     
-    fclose(fp);
+    // Close the file and free memory
+    fclose(png);
+    free(hdr);
+    free(argt);
     
-    return 0;
+    return NULL;
 }
 
 int countComplete(joblist_t *joblist) {
