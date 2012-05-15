@@ -1480,23 +1480,22 @@ void *sendMapFrame(void *argt) {
 
 int returnPNG(int outsocket, anaxjob_t *job) {
     // Get the file size
-    FILE *fp = fopen(job->outfile, "r");
-    fseek(fp, 0L, SEEK_END);
-    int num_bytes = ftell(fp);
-    rewind(fp);
+    FILE *png = fopen(job->outfile, "r");
+    fseek(png, 0L, SEEK_END);
+    int num_bytes = ftell(png);
+    rewind(png);
     
     // Pack a PNG header
     png_hdr_t *hdr = malloc(sizeof(png_hdr_t));
     hdr->packet_size = sizeof(png_hdr_t) + num_bytes;
     hdr->type = HDR_PNG;
     hdr->index = job->index;
+    hdr->img_height = job->img_height;
+    hdr->img_width = job->img_width;
     hdr->top = job->top_lat;
     hdr->bottom = job->bottom_lat;
     hdr->left = job->left_lon;
     hdr->right = job->right_lon;
-    
-    // Open the PNG
-    FILE *png = fopen(job->outfile, "r");
     
     // Spawn a new thread to send the data
     // (so that the program can continue processing)

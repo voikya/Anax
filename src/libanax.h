@@ -45,6 +45,36 @@ struct colorscheme {
 };
 typedef struct colorscheme colorscheme_t;
 
+struct tile {
+    char *name;
+    int img_height;
+    int img_width;
+    int has_been_rendered;
+
+    // Coordinate values
+    double north;
+    double south;
+    double east;
+    double west;
+
+    // Pixel coordinates in final combined image
+    int top_row;
+    int bottom_row;
+    int left_col;
+    int right_col;
+};
+typedef struct tile tile_t;
+
+struct tile_list {
+    int num_tiles;
+    tile_t *tiles;
+    double north_lim;
+    double south_lim;
+    double east_lim;
+    double west_lim;
+};
+typedef struct map_list tilelist_t;
+
 int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile, int suppress_output, frame_coords_t *frame);
 void printGeotiffInfo(geotiffmap_t *map, TIFF *tiff);
 int setDefaultColors(geotiffmap_t *map, colorscheme_t **colorscheme, int isAbsolute);

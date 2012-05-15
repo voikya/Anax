@@ -72,6 +72,8 @@ struct anaxjob {
 	double bottom_lat;
 	double right_lon;
 	double left_lon;
+	int img_height;
+	int img_width;
 	frame_coords_t frame_coordinates;
 };
 typedef struct anaxjob anaxjob_t;

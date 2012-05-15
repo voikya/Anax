@@ -353,6 +353,10 @@ int main(int argc, char *argv[]) {
                     current_job->status = ANAX_STATE_COMPLETE;
                     sendStatusUpdate(outsocketfd, remotenodes, current_job, whoami);
                     
+                    // Get final image dimensions
+                    current_job->img_height = map->height;
+                    current_job->img_width = map->width;
+                    
                     // Free the map
                     freeMap(map);
                     

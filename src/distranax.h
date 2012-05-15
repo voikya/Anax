@@ -126,6 +126,8 @@ struct header_png {
     uint8_t type; // HDR_PNG
     uint16_t index;
     uint8_t fill;
+    uint32_t img_height;
+    uint32_t img_width;
     double top;
     double bottom;
     double left;
