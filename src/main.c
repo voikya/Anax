@@ -74,6 +74,7 @@ int main(int argc, char *argv[]) {
 	}   
 
 	joblist_t *joblist = malloc(sizeof(joblist_t));
+	joblist->jobs = NULL;
 	joblist->num_jobs = 0;
 	for(int i = optind; i < argc; i++) {
 		joblist->num_jobs++;
@@ -137,9 +138,7 @@ int main(int argc, char *argv[]) {
 	    }
 	    
 	    // Send each remote node the colorscheme, scale, and remote node list
-	    for(int i = 0; i < destinationlist->num_destinations; i++) {
-	        err = initRemoteHosts(destinationlist, colorscheme, scale);
-	    }
+	    err = initRemoteHosts(destinationlist, colorscheme, scale);
 	    
 	    // Send out initial jobs
 	    err = distributeJobs(destinationlist, joblist);
@@ -162,13 +161,12 @@ int main(int argc, char *argv[]) {
 		    err = distributeJobs(destinationlist, joblist);
 		}
 		
+		printf("All jobs have rendered.\n");
+		
 		pthread_mutex_destroy(&ready_mutex);
 		pthread_cond_destroy(&ready_cond);
 		
-		// Wait for all threads to terminate
-		for(int i = 0; i < joblist->num_jobs; i++) {
-		    pthread_join(destinationlist->destinations[i].thread, NULL);
-		}
+        
 		
     } else if(lflag) {
         // Handle receipt of distributed rendering job
@@ -378,10 +376,8 @@ int main(int argc, char *argv[]) {
         
         printf("Rendering complete\n");
         
-        // Stitch together images
-    
-		// Wait for render merge request
-        sleep(1000);
+        // Keep alive (temporary)
+        sleep(300);
 		
 	} else {
 	    // Handle local rendering

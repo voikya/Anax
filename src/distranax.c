@@ -359,10 +359,12 @@ void *runRemoteNode(void *argt) {
     while(bytes_sent < sizeof(tiff_hdr_t)) {
         bytes_sent += send(destination->socketfd, hdr, sizeof(tiff_hdr_t) - bytes_sent, 0);
     }
+    destination->status = ANAX_STATE_COMPLETE;
     
     // Handle LOADED, COMPLETE, and NOJOB status updates from remote
+    int num_complete = 0;
     int has_job = 1;
-    while(has_job) {
+    while(num_complete < destination->num_jobs) {
         status_change_hdr_t buf;
         int bytes_rcvd = 0;
         while(bytes_rcvd < sizeof(status_change_hdr_t)) {
@@ -372,11 +374,11 @@ void *runRemoteNode(void *argt) {
             switch(buf.status) {
                 case ANAX_STATE_LOADED:
                     destination->status = ANAX_STATE_LOADED;
-                    //newjob->status = ANAX_STATE_LOADED;
                     break;
                 case ANAX_STATE_COMPLETE:
-                    destination->status = ANAX_STATE_COMPLETE;
-                    //newjob->status = ANAX_STATE_COMPLETE;
+                    destination->jobs[getJobIndex(destination, buf.job_id)]->status = ANAX_STATE_COMPLETE;
+                    num_complete++;
+                    printf("Num complete: %i\n", num_complete);
                     break;
                 case ANAX_STATE_NOJOB:
                     has_job = 0;
@@ -384,6 +386,12 @@ void *runRemoteNode(void *argt) {
             }
         }
     }
+    printf("Thread ending\n");
+    
+    // Alert the main thread to check statuses
+    pthread_mutex_lock(&ready_mutex);
+    pthread_cond_signal(&ready_cond);
+    pthread_mutex_unlock(&ready_mutex);
     
     return 0;
 }
