@@ -143,6 +143,7 @@ typedef struct header_png png_hdr_t;
 
 struct thread_arguments {
     destination_t *dest;
+    tilelist_t *tilelist;
     uint8_t *init_pkt;
     int init_pkt_size;
     uint8_t *nodes_pkt;
@@ -184,7 +185,7 @@ typedef struct png_thread_arguments png_threadarg_t;
 void *get_in_addr(struct sockaddr *sa);
 int loadDestinationList(char *destfile, destinationlist_t **destinations);
 int connectToRemoteHost(destination_t *dest, char *port);
-int initRemoteHosts(destinationlist_t *destinationlist, colorscheme_t *colorscheme, double scale);
+int initRemoteHosts(destinationlist_t *destinationlist, tilelist_t *tilelist, colorscheme_t *colorscheme, double scale);
 int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist);
 void *runRemoteNode(void *argt);
 void *runRemoteJob(void *argt);

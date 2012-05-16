@@ -20,7 +20,7 @@ void usage() {
 }
 
 int main(int argc, char *argv[]) {
-    setvbuf(stdout, NULL, _IONBF, NULL);
+    setvbuf(stdout, NULL, _IONBF, 0);
 
 	// Argument flags
 	int c;
@@ -137,8 +137,18 @@ int main(int argc, char *argv[]) {
 	        setDefaultColors(NULL, &colorscheme, ANAX_RELATIVE_COLORS);
 	    }
 	    
+	    // Initialize the tile list for receiving incoming renders
+	    tilelist_t *tilelist = malloc(sizeof(tilelist_t));
+	    tilelist->num_tiles = 0;
+	    tilelist->tiles = NULL;
+	    tilelist->north_lim = DBL_MIN;
+	    tilelist->south_lim = DBL_MAX;
+	    tilelist->east_lim = DBL_MIN;
+	    tilelist->west_lim = DBL_MAX;
+	    pthread_mutex_init(&(tilelist->lock), NULL);
+	    
 	    // Send each remote node the colorscheme, scale, and remote node list
-	    err = initRemoteHosts(destinationlist, colorscheme, scale);
+	    err = initRemoteHosts(destinationlist, tilelist, colorscheme, scale);
 	    
 	    // Send out initial jobs
 	    err = distributeJobs(destinationlist, joblist);
@@ -162,6 +172,7 @@ int main(int argc, char *argv[]) {
 		}
 		
 		printf("All jobs have rendered.\n");
+		printf("%i tiles received\n", tilelist->num_tiles);
 		
 		pthread_mutex_destroy(&ready_mutex);
 		pthread_cond_destroy(&ready_cond);

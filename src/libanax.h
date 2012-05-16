@@ -1,6 +1,7 @@
 #ifndef LIBANAX_H
 #define LIBANAX_H
 
+#include <float.h>
 #include <png.h>
 #include <stdint.h>
 #include <tiffio.h>
@@ -72,8 +73,9 @@ struct tile_list {
     double south_lim;
     double east_lim;
     double west_lim;
+    pthread_mutex_t lock;
 };
-typedef struct map_list tilelist_t;
+typedef struct tile_list tilelist_t;
 
 int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile, int suppress_output, frame_coords_t *frame);
 void printGeotiffInfo(geotiffmap_t *map, TIFF *tiff);

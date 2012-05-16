@@ -101,7 +101,7 @@ int connectToRemoteHost(destination_t *dest, char *port) {
 	return 0;
 }
 
-int initRemoteHosts(destinationlist_t *destinationlist, colorscheme_t *colorscheme, double scale) {
+int initRemoteHosts(destinationlist_t *destinationlist, tilelist_t *tilelist, colorscheme_t *colorscheme, double scale) {
     printf("Packing initialization header... ");
     fflush(stdout);
     
@@ -156,6 +156,7 @@ int initRemoteHosts(destinationlist_t *destinationlist, colorscheme_t *colorsche
         if(destinationlist->destinations[i].status == ANAX_STATE_NOJOB) {
             threadarg_t *argt = malloc(sizeof(threadarg_t));
             argt->dest = &(destinationlist->destinations[i]);
+            argt->tilelist = tilelist;
             argt->init_pkt = packet;
             argt->init_pkt_size = (int)(hdr->packet_size);
             argt->nodes_pkt = packet2;
@@ -211,6 +212,7 @@ int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist) {
 void *runRemoteNode(void *argt) {
     // Unpack thread argument struct
     destination_t *destination = ((threadarg_t *)argt)->dest;
+    tilelist_t *tilelist = ((threadarg_t *)argt)->tilelist;
     uint8_t *init_pkt = ((threadarg_t *)argt)->init_pkt;
     int init_pkt_size = ((threadarg_t *)argt)->init_pkt_size;
     uint8_t *nodes_pkt = ((threadarg_t *)argt)->nodes_pkt;
@@ -362,30 +364,86 @@ void *runRemoteNode(void *argt) {
     destination->status = ANAX_STATE_COMPLETE;
     
     // Handle LOADED, COMPLETE, and NOJOB status updates from remote
-    int num_complete = 0;
-    int has_job = 1;
-    while(num_complete < destination->num_jobs) {
-        status_change_hdr_t buf;
+    // Receive rendered PNGs from remote    
+    int num_rcvd = 0;
+    while(num_rcvd < destination->num_jobs) {
         int bytes_rcvd = 0;
-        while(bytes_rcvd < sizeof(status_change_hdr_t)) {
-            bytes_rcvd += recv(destination->socketfd, &buf + bytes_rcvd, sizeof(status_change_hdr_t) - bytes_rcvd, 0);
+        uint32_t packet_size = 0;
+        uint8_t packet_type = 0;
+        while(bytes_rcvd < sizeof(uint32_t)) {
+            bytes_rcvd += recv(destination->socketfd, &packet_size + bytes_rcvd, sizeof(uint32_t) - bytes_rcvd, 0);
         }
-        if(buf.type == HDR_STATUS_CHANGE) {
-            switch(buf.status) {
-                case ANAX_STATE_LOADED:
-                    destination->status = ANAX_STATE_LOADED;
-                    break;
-                case ANAX_STATE_COMPLETE:
-                    destination->jobs[getJobIndex(destination, buf.job_id)]->status = ANAX_STATE_COMPLETE;
-                    num_complete++;
-                    printf("Num complete: %i\n", num_complete);
-                    break;
-                case ANAX_STATE_NOJOB:
-                    has_job = 0;
-                    break;
+        bytes_rcvd += recv(destination->socketfd, &packet_type, sizeof(uint8_t), 0);
+        switch(packet_type) {
+            case HDR_STATUS_CHANGE:
+            {
+                status_change_hdr_t hdr;
+                while(bytes_rcvd < sizeof(status_change_hdr_t)) {
+                    bytes_rcvd += recv(destination->socketfd, &hdr + bytes_rcvd, sizeof(status_change_hdr_t) - bytes_rcvd, 0);
+                }
+                switch(hdr.status) {
+                    case ANAX_STATE_LOADED:
+                        destination->status = ANAX_STATE_LOADED;
+                        break;
+                    case ANAX_STATE_COMPLETE:
+                        destination->jobs[getJobIndex(destination, hdr.job_id)]->status = ANAX_STATE_COMPLETE;
+                        break;
+                    case ANAX_STATE_NOJOB:
+                        break;
+                }
+                break;
+            }
+            case HDR_PNG:
+            {            
+                // Get the rest of the header
+                uint8_t *hdrbuf = malloc(sizeof(png_hdr_t));
+                while(bytes_rcvd < sizeof(png_hdr_t)) {
+                    bytes_rcvd += recv(destination->socketfd, hdrbuf + bytes_rcvd, sizeof(png_hdr_t) - bytes_rcvd, 0);
+                }
+                png_hdr_t *hdr = (png_hdr_t *)hdrbuf;
+                
+                // Lock the tilelist
+                pthread_mutex_lock(&(tilelist->lock));
+                
+                // Allocate and initialize a new tile
+                tilelist->tiles = realloc(tilelist->tiles, (tilelist->num_tiles + 1) * sizeof(tile_t));
+                tile_t *newtile = &(tilelist->tiles[tilelist->num_tiles]);
+                tilelist->num_tiles++;
+                newtile->name = calloc(32, sizeof(char));
+                sprintf(newtile->name, "/tmp/map%i.png", tilelist->num_tiles);
+                newtile->img_height = hdr->img_height;
+                newtile->img_width = hdr->img_width;
+                newtile->has_been_rendered = 0;
+                newtile->north = hdr->top;
+                newtile->south = hdr->bottom;
+                newtile->east = hdr->right;
+                newtile->west = hdr->left;
+                newtile->top_row = 0;
+                newtile->bottom_row = 0;
+                newtile->left_col = 0;
+                newtile->right_col = 0;
+                
+                // Unlock the tilelist
+                pthread_mutex_unlock(&(tilelist->lock));
+                
+                // Open a new file to write to
+                FILE *fp = fopen(newtile->name, "w+");
+                
+                // Get and write the image
+                uint8_t buf[8192]; // 8 kilobytes
+                while(bytes_rcvd < packet_size) {
+                    int bytes_rcvd_tmp = recv(destination->socketfd, buf, 8192, 0);
+                    fwrite(buf, sizeof(uint8_t), bytes_rcvd_tmp, fp);
+                    bytes_rcvd += bytes_rcvd_tmp;
+                }
+                fclose(fp);
+                
+                num_rcvd++;
+                break;
             }
         }
     }
+    
     printf("Thread ending\n");
     
     // Alert the main thread to check statuses
@@ -1484,6 +1542,7 @@ int returnPNG(int outsocket, anaxjob_t *job) {
     fseek(png, 0L, SEEK_END);
     int num_bytes = ftell(png);
     rewind(png);
+    printf("Sending PNG of size %i\n", num_bytes);
     
     // Pack a PNG header
     png_hdr_t *hdr = malloc(sizeof(png_hdr_t));
@@ -1527,7 +1586,7 @@ void *returnPNGthread(void *argt) {
     
     // Send the file
     uint8_t buf[8192];
-    while(bytes_sent < sizeof(hdr->packet_size)) {
+    while(bytes_sent < hdr->packet_size) {
         int bytes_sent_tmp = 0;
         int bytes_to_send = fread(buf, sizeof(uint8_t), 8192, png);
         while(bytes_sent_tmp < bytes_to_send) {
