@@ -205,8 +205,6 @@ void *handleSharing(void *argt);
 void *sendMapFrame(void *argt);
 int returnPNG(int outsocket, anaxjob_t *job);
 void *returnPNGthread(void *argt);
-int countComplete(joblist_t *joblist);
-int countJobless(destinationlist_t *dests);
 int sendCorners(int outsocketfd, double top, double bottom, double left, double right);
 int getJobIndex(destination_t *dest, int index);
 

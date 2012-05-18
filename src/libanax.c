@@ -296,8 +296,6 @@ void printGeotiffInfo(geotiffmap_t *map, TIFF *tiff) {
 }
 
 int scaleImage(geotiffmap_t **map, double scale) {
-	int err;
-
 	// Allocate a new map struct
 	geotiffmap_t *newmap = malloc(sizeof(geotiffmap_t));
 

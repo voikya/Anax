@@ -1128,7 +1128,7 @@ int sendMinMax(destinationlist_t *remotenodes, int local_min, int local_max, int
 
 void *spawnShareThread(void *argt) {
     int sharesocketfd, shareoutsocketfd;
-    int err = initRemoteListener(&sharesocketfd, COMM_PORT);
+    initRemoteListener(&sharesocketfd, COMM_PORT);
     while(1) {
         struct sockaddr_in clientAddr;
         socklen_t sinSize = sizeof(struct sockaddr_in);
@@ -1147,7 +1147,7 @@ void *handleSharing(void *argt) {
     joblist_t *localjobs = ((threadshare_t *)argt)->localjobs;
     int *global_max = ((threadshare_t *)argt)->global_max;
     int *global_min = ((threadshare_t *)argt)->global_min;
-    int whoami = ((threadshare_t *)argt)->whoami;
+    //int whoami = ((threadshare_t *)argt)->whoami;
     int socket = ((threadshare_t *)argt)->socket;
     pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
     
@@ -1603,26 +1603,6 @@ void *returnPNGthread(void *argt) {
     free(argt);
     
     return NULL;
-}
-
-int countComplete(joblist_t *joblist) {
-    int count = 0;
-    for(int i = 0; i < joblist->num_jobs; i++) {
-        if(joblist->jobs[i].status == ANAX_STATE_COMPLETE)
-            count++;
-    }
-    
-    return count;
-}
-
-int countJobless(destinationlist_t *dests) {
-    int count = 0;
-    for(int i = 0; i < dests->num_destinations; i++) {
-        if(dests->destinations[i].status == ANAX_STATE_NOJOB)
-            count++;
-    }
-    
-    return count;
 }
 
 int sendCorners(int outsocket, double top, double bottom, double left, double right) {

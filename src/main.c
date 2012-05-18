@@ -154,21 +154,20 @@ int main(int argc, char *argv[]) {
 	    err = distributeJobs(destinationlist, joblist);
 	    
 		// Send out later jobs as remote nodes free up
-		int completed = 0;
-		int jobless = 0;
-		while(completed < joblist->num_jobs) {
+		while(tilelist->num_tiles < joblist->num_jobs) {
 		    printf("Waiting on lock... ");
 		    fflush(stdout);
     		pthread_mutex_lock(&ready_mutex);
-	    	while(countComplete(joblist) == completed && countJobless(destinationlist) == jobless) {
-		        pthread_cond_wait(&ready_cond, &ready_mutex);
-		    }
-		    completed = countComplete(joblist);
-		    jobless = countJobless(destinationlist);
+		    pthread_cond_wait(&ready_cond, &ready_mutex);
 		    pthread_mutex_unlock(&ready_mutex);
 		    printf("Got signal\n");
 		    
 		    err = distributeJobs(destinationlist, joblist);
+		}
+		
+		// Wait for all threads to join
+		for(int i = 0; i < destinationlist->num_destinations; i++) {
+		    pthread_join(destinationlist->destinations[i].thread, NULL);
 		}
 		
 		printf("All jobs have rendered.\n");
