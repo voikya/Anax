@@ -1628,3 +1628,61 @@ int getJobIndex(destination_t *dest, int index) {
     
     return -1;
 }
+
+int finalizeRemoteJobs(destinationlist_t *remotenodes) {
+    // Set up a remote termination call packet
+    end_hdr_t *hdr = malloc(sizeof(end_hdr_t));
+    hdr->packet_size = sizeof(end_hdr_t);
+    hdr->type = HDR_END;
+
+    // Distribute the termination call
+    for(int i = 0; i < remotenodes->num_destinations; i++) {
+        int bytes_sent = 0;
+        while(bytes_sent < hdr->packet_size) {
+            bytes_sent += send(remotenodes->destinations[i].socketfd, hdr + bytes_sent, hdr->packet_size - bytes_sent, 0);
+        }
+        
+        // Free the remote node structs
+        close(remotenodes->destinations[i].socketfd);
+        pthread_mutex_destroy(&(remotenodes->destinations[i].ready_mutex));
+        pthread_cond_destroy(&(remotenodes->destinations[i].ready_cond));
+        free(remotenodes->destinations[i].jobs);
+    }
+    
+    // Free the destinationlist_t
+    free(remotenodes->destinations);
+    free(remotenodes);
+    
+    return 0;
+}
+
+int getTermMessage(int socket) {
+    int bytes_rcvd = 0;
+    int quit = 0;
+    while(!quit) {
+        uint32_t packet_size;
+    
+        // Get packet size
+        while(bytes_rcvd < sizeof(uint32_t)) {
+            bytes_rcvd += recv(socket, &packet_size, sizeof(uint32_t), 0);
+        }
+    
+        // Allocate a buffer
+        uint8_t *buf = calloc(packet_size, sizeof(uint8_t));
+    
+        // Read in the rest of the packet
+        while(bytes_rcvd < packet_size) {
+            bytes_rcvd += recv(socket, buf + 4, packet_size - 4, 0);
+        }
+        
+        if(buf[4] == HDR_END) {
+            quit = 1;
+        } else {
+            free(buf);
+        }
+    }
+    
+    printf("Got quit message\n");
+    
+    return 0;
+}

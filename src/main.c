@@ -176,7 +176,10 @@ int main(int argc, char *argv[]) {
 		pthread_mutex_destroy(&ready_mutex);
 		pthread_cond_destroy(&ready_cond);
 		
-        
+		// Tell all remote nodes to terminate
+		finalizeRemoteJobs(destinationlist);
+		
+        // Stitch together the received images
 		
     } else if(lflag) {
         // Handle receipt of distributed rendering job
@@ -324,7 +327,7 @@ int main(int argc, char *argv[]) {
                localjobs->jobs[i].frame_coordinates.SE_set != 2 &&
                localjobs->jobs[i].frame_coordinates.SW_set != 2 &&
                localjobs->jobs[i].frame_coordinates.NW_set != 2)
-                localjobs->jobs[i].status = ANAX_STATE_RENDERING;
+               localjobs->jobs[i].status = ANAX_STATE_RENDERING;
         }
         printf("All data is ready. Proceeding to rendering phase.\n");
         
@@ -390,8 +393,26 @@ int main(int argc, char *argv[]) {
         
         printf("Rendering complete\n");
         
-        // Keep alive (temporary)
-        sleep(300);
+        // Wait for a termination message
+        getTermMessage(outsocketfd);
+        
+        // Free memory
+        close(outsocketfd);
+        for(int i = 0; i < localjobs->num_jobs; i++) {
+            free(localjobs->jobs[i].name);
+            free(localjobs->jobs[i].tmpfile);
+            free(localjobs->jobs[i].outfile);
+        }
+        free(localjobs->jobs);
+        free(localjobs);
+        for(int i = 0; i < remotenodes->num_destinations; i++) {
+            if(i != whoami) {
+                close(remotenodes->destinations[i].socketfd);
+                free(remotenodes->destinations[i].jobs);
+            }
+        }
+        free(remotenodes->destinations);
+        free(remotenodes);
 		
 	} else {
 	    // Handle local rendering

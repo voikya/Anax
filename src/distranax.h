@@ -19,6 +19,7 @@
 #define HDR_SEND_EDGE           0x06
 #define HDR_SEND_MIN_MAX        0x07
 #define HDR_PNG                 0x08
+#define HDR_END                 0x09
 
 #define PACKET_HAS_DATA         0x01
 #define PACKET_HAS_URL          0x02
@@ -136,6 +137,12 @@ struct header_png {
 };
 typedef struct header_png png_hdr_t;
 
+struct header_end {
+    uint32_t packet_size;
+    uint8_t type; // HDR_END
+};
+typedef struct header_end end_hdr_t;
+
 
 /////
 // PTHREAD ARGUMENT STRUCTS
@@ -207,5 +214,7 @@ int returnPNG(int outsocket, anaxjob_t *job);
 void *returnPNGthread(void *argt);
 int sendCorners(int outsocketfd, double top, double bottom, double left, double right);
 int getJobIndex(destination_t *dest, int index);
+int finalizeRemoteJobs(destinationlist_t *remodenodes);
+int getTermMessage(int socket);
 
 #endif
