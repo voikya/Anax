@@ -544,4 +544,19 @@ void freeMap(geotiffmap_t *map) {
     free(map);
 }
 
+int finalizeLocalJobs(joblist_t *joblist) {
+    for(int i = 0; i < joblist->num_jobs; i++) {
+        if(joblist->jobs[i].name)
+            free(joblist->jobs[i].name);
+        if(joblist->jobs[i].tmpfile)
+            free(joblist->jobs[i].tmpfile);
+        if(joblist->jobs[i].outfile)
+            free(joblist->jobs[i].outfile);
+    }
+    free(joblist->jobs);
+    free(joblist);
+    
+    return 0;
+}
+
 //void updatePNGWriteStatus(png_structp png_ptr, png_uint32 row, int pass);

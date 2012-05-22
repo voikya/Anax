@@ -90,6 +90,7 @@ int getCorners(geotiffmap_t *map, double *top, double *bottom, double *left, dou
 int writeMapData(anaxjob_t *current_job, geotiffmap_t *map);
 int readMapData(anaxjob_t *current_job, geotiffmap_t **map);
 void freeMap(geotiffmap_t *map);
+int finalizeLocalJobs(joblist_t *joblist);
 
 void SHOW_DATA_AT_POINT(geotiffmap_t *map, int r, int c);
 void SHOW_COLOR_SCHEME(colorscheme_t *colors);

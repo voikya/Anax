@@ -79,6 +79,7 @@ int main(int argc, char *argv[]) {
 	for(int i = optind; i < argc; i++) {
 		joblist->num_jobs++;
 		joblist->jobs = realloc(joblist->jobs, joblist->num_jobs * sizeof(anaxjob_t));
+		memset(&(joblist->jobs[i]), 0, sizeof(anaxjob_t));
 		joblist->jobs[joblist->num_jobs - 1].name = argv[i];
 		joblist->jobs[joblist->num_jobs - 1].index = i;
 		joblist->jobs[joblist->num_jobs - 1].status = ANAX_STATE_PENDING;
@@ -176,8 +177,9 @@ int main(int argc, char *argv[]) {
 		pthread_mutex_destroy(&ready_mutex);
 		pthread_cond_destroy(&ready_cond);
 		
-		// Tell all remote nodes to terminate
+		// Clean up local and remote memory, and terminate remote processes
 		finalizeRemoteJobs(destinationlist);
+		finalizeLocalJobs(joblist);
 		
         // Stitch together the received images
 		
@@ -398,13 +400,7 @@ int main(int argc, char *argv[]) {
         
         // Free memory
         close(outsocketfd);
-        for(int i = 0; i < localjobs->num_jobs; i++) {
-            free(localjobs->jobs[i].name);
-            free(localjobs->jobs[i].tmpfile);
-            free(localjobs->jobs[i].outfile);
-        }
-        free(localjobs->jobs);
-        free(localjobs);
+        finalizeLocalJobs(localjobs);
         for(int i = 0; i < remotenodes->num_destinations; i++) {
             if(i != whoami) {
                 close(remotenodes->destinations[i].socketfd);
