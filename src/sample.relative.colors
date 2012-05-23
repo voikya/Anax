@@ -21,3 +21,6 @@ Relative
 75	255	74	1
 90	160	0	2
 100	116	0	3
+
+# The following line sets the color of water (if the -w flag is set)
+W   136 172 255

@@ -19,6 +19,7 @@ struct point {
 	int16_t elevation;
 	double latitude;
 	double longitude;
+	uint8_t isWater;
 	rgb_t color;
 };
 typedef struct point point_t;
@@ -41,8 +42,10 @@ typedef struct colorstop colorstop_t;
 
 struct colorscheme {
 	int isAbsolute;
+	int showWater;
 	int num_stops;
 	colorstop_t *colors;
+	colorstop_t water;
 };
 typedef struct colorscheme colorscheme_t;
 
@@ -97,8 +100,9 @@ typedef struct tile_row tile_subset_t;
 int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile, int suppress_output, frame_coords_t *frame);
 void printGeotiffInfo(geotiffmap_t *map, TIFF *tiff);
 int setDefaultColors(geotiffmap_t *map, colorscheme_t **colorscheme, int isAbsolute);
-int loadColorScheme(geotiffmap_t *map, colorscheme_t **colorscheme, char *colorfile);
+int loadColorScheme(geotiffmap_t *map, colorscheme_t **colorscheme, char *colorfile, int wflag);
 int setRelativeElevations(colorscheme_t *colorscheme, int16_t max, int16_t min);
+int findWater(geotiffmap_t *map);
 int colorize(geotiffmap_t *map, colorscheme_t *colorscheme);
 int renderPNG(geotiffmap_t *map, char *outfile, int suppress_output);
 //void updatePNGWriteStatus(png_structp png_ptr, png_uint32 row, int pass);

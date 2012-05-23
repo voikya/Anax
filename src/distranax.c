@@ -106,18 +106,31 @@ int initRemoteHosts(destinationlist_t *destinationlist, tilelist_t *tilelist, co
     fflush(stdout);
     
     // Allocate and pack an initialization header
-    int packetsize = sizeof(init_hdr_t) + (sizeof(compressed_color_t) * colorscheme->num_stops);
+    int packetsize = sizeof(init_hdr_t) + (sizeof(compressed_color_t) * colorscheme->num_stops) + ((colorscheme->showWater) ? sizeof(compressed_color_t) : 0);
     uint8_t *packet = calloc(packetsize, sizeof(uint8_t));
     init_hdr_t *hdr = (init_hdr_t *)packet;
     hdr->packet_size = (uint32_t)packetsize;
     hdr->type = HDR_INITIALIZATION;
     hdr->is_abs = (uint8_t)(colorscheme->isAbsolute);
+    hdr->show_water = (uint8_t)(colorscheme->showWater);
     hdr->num_colors = (uint8_t)(colorscheme->num_stops);
     hdr->scale = scale;
     
+    // If showWater is set, pack the water color scheme first
+    int offset = 0;
+    if(colorscheme->showWater) {
+        offset = sizeof(compressed_color_t);
+        compressed_color_t *water = (compressed_color_t *)(packet + sizeof(init_hdr_t));
+        water->elevation = (int32_t)(colorscheme->water.elevation);
+        water->red = (uint8_t)(colorscheme->water.color.r);
+        water->green = (uint8_t)(colorscheme->water.color.g);
+        water->blue = (uint8_t)(colorscheme->water.color.b);
+        water->alpha = (double)(colorscheme->water.color.a);
+    }
+    
     // Pack the colorscheme after the header
     for(int i = 1; i <= colorscheme->num_stops; i++) {
-        compressed_color_t *comp_c = (compressed_color_t *)(packet + sizeof(init_hdr_t) + ((i - 1) * sizeof(compressed_color_t)));
+        compressed_color_t *comp_c = (compressed_color_t *)(packet + sizeof(init_hdr_t) + offset + ((i - 1) * sizeof(compressed_color_t)));
         comp_c->elevation = (int32_t)(colorscheme->colors[i].elevation);
         comp_c->red = (uint8_t)(colorscheme->colors[i].color.r);
         comp_c->green = (uint8_t)(colorscheme->colors[i].color.g);
@@ -150,7 +163,7 @@ int initRemoteHosts(destinationlist_t *destinationlist, tilelist_t *tilelist, co
     printf("Done\n");
     printf("Initializing remote nodes...");
     fflush(stdout);
-    
+
     // Launch a new thread for each remote node
     for(int i = 0; i < destinationlist->num_destinations; i++) {
         if(destinationlist->destinations[i].status == ANAX_STATE_NOJOB) {
@@ -215,6 +228,7 @@ void *runRemoteNode(void *argt) {
     tilelist_t *tilelist = ((threadarg_t *)argt)->tilelist;
     uint8_t *init_pkt = ((threadarg_t *)argt)->init_pkt;
     int init_pkt_size = ((threadarg_t *)argt)->init_pkt_size;
+
     uint8_t *nodes_pkt = ((threadarg_t *)argt)->nodes_pkt;
     int nodes_pkt_size = ((threadarg_t *)argt)->nodes_pkt_size;
     uint8_t index = ((threadarg_t *)argt)->index;
@@ -226,7 +240,7 @@ void *runRemoteNode(void *argt) {
     // (so as to not overwrite the packet used by other threads)
     uint8_t initbuf[init_pkt_size];
     memcpy(initbuf, init_pkt, init_pkt_size);
-    initbuf[7] = index;
+    initbuf[8] = index;
 
     // Send out initialization header
     while(bytes_sent < init_pkt_size) {
@@ -514,10 +528,21 @@ int getInitHeaderData(int outsocket, int *whoami, colorscheme_t **colorscheme, d
         
         *colorscheme = malloc(sizeof(colorscheme_t));
         (*colorscheme)->isAbsolute = (int)(hdr->is_abs);
+        (*colorscheme)->showWater = (int)(hdr->show_water);
         (*colorscheme)->num_stops = (int)(hdr->num_colors);
         (*colorscheme)->colors = calloc(hdr->num_colors + 2, sizeof(colorstop_t));
 
         uint8_t *coloroffset = buf + sizeof(init_hdr_t);
+        if(hdr->show_water) {
+            compressed_color_t *water = (compressed_color_t *)coloroffset;
+            (*colorscheme)->water.elevation = (int16_t)(water->elevation);
+            (*colorscheme)->water.color.r = (int)(water->red);
+            (*colorscheme)->water.color.g = (int)(water->green);
+            (*colorscheme)->water.color.b = (int)(water->blue);
+            
+            coloroffset += sizeof(compressed_color_t);
+        }
+        
         compressed_color_t *colors = (compressed_color_t *)coloroffset;
         for(int i = 0; i < hdr->num_colors; i++) {
             (*colorscheme)->colors[i + 1].elevation = (int16_t)(colors[i].elevation);

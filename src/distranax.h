@@ -38,8 +38,10 @@ struct header_initialization {
     uint32_t packet_size;
     uint8_t type; // HDR_INITIALIZATION
     uint8_t is_abs;
+    uint8_t show_water;
     uint8_t num_colors;
     uint8_t index;
+    uint8_t fill[7];
     double scale;
     // Followed by an array of compressed_color_t
 };

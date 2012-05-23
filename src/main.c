@@ -9,7 +9,7 @@
 #include "distranax.h"
 
 void usage() {
-	fprintf(stderr, "Usage: geotiff [-cdloqs] [SRC PATH]\n");
+	fprintf(stderr, "Usage: geotiff [-cdloqsw] [SRC PATH]\n");
 	fprintf(stderr, "    Flags:\n");
 	fprintf(stderr, "    -c [FILEPATH]: Apply the color scheme in FILEPATH instead of the default color scheme\n");
     fprintf(stderr, "    -d [FILEPATH]: Run in distributed mode, with FILEPATH containing a list of addresses to other machines\n");
@@ -17,6 +17,7 @@ void usage() {
 	fprintf(stderr, "    -o [FILEPATH]: Save the output file to FILEPATH\n");
 	fprintf(stderr, "    -q : Suppress output to stdout\n");
 	fprintf(stderr, "    -s [SCALE]: Scale the output file by a factor of SCALE\n");
+	fprintf(stderr, "    -w : Try to identify bodies of water\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -30,6 +31,7 @@ int main(int argc, char *argv[]) {
 	int oflag = 0;
 	int qflag = 0;
 	int sflag = 0;
+	int wflag = 0;
 	char *outfile = NULL;
 	char *colorfile = NULL;
 	char *addrfile = NULL;
@@ -37,7 +39,7 @@ int main(int argc, char *argv[]) {
 
 	int err;
 
-	while((c = getopt(argc, argv, "c:d:lo:qs:")) != -1) {
+	while((c = getopt(argc, argv, "c:d:lo:qs:w")) != -1) {
 		switch(c) {
 			case 'c':
 				cflag = 1;
@@ -61,6 +63,9 @@ int main(int argc, char *argv[]) {
 				sflag = 1;
 				scale = atof(optarg);
 				break;
+			case 'w':
+			    wflag = 1;
+			    break;
 			case ':':
 				fprintf(stderr, "Error: Flag is missing argument\n");
 				usage();
@@ -134,7 +139,7 @@ int main(int argc, char *argv[]) {
 	    // Initialize color scheme
 	    colorscheme_t *colorscheme;
 	    if(cflag) {
-	        loadColorScheme(NULL, &colorscheme, colorfile);
+	        loadColorScheme(NULL, &colorscheme, colorfile, wflag);
 	    } else {
 	        setDefaultColors(NULL, &colorscheme, ANAX_RELATIVE_COLORS);
 	    }
@@ -143,9 +148,9 @@ int main(int argc, char *argv[]) {
 	    tilelist_t *tilelist = malloc(sizeof(tilelist_t));
 	    tilelist->num_tiles = 0;
 	    tilelist->tiles = NULL;
-	    tilelist->north_lim = DBL_MIN;
+	    tilelist->north_lim = -DBL_MAX;
 	    tilelist->south_lim = DBL_MAX;
-	    tilelist->east_lim = DBL_MIN;
+	    tilelist->east_lim = -DBL_MAX;
 	    tilelist->west_lim = DBL_MAX;
 	    pthread_mutex_init(&(tilelist->lock), NULL);
 	    
@@ -205,6 +210,8 @@ int main(int argc, char *argv[]) {
         colorscheme_t *colorscheme;
         double scale;
         getInitHeaderData(outsocketfd, &whoami, &colorscheme, &scale);
+        
+        SHOW_COLOR_SCHEME(colorscheme);
         
         // Receive and set up a list of all remote nodes
         destinationlist_t *remotenodes;
@@ -312,7 +319,7 @@ int main(int argc, char *argv[]) {
                         count = (remotenodes->destinations[c].status == ANAX_STATE_RENDERING) ? count + 1 : count;
                     }
                     done = (count == remotenodes->num_destinations - 1) ? 1 : 0;
-            printf("Done: %i\n", count);
+                    printf("Done: %i\n", done);
                 }
             }
             
@@ -355,6 +362,11 @@ int main(int argc, char *argv[]) {
                     // Load the map
                     geotiffmap_t *map;
                     readMapData(current_job, &map);
+                    
+                    // Find water
+                    if(colorscheme->showWater) {
+                        findWater(map);
+                    }
                     
                     // Scale
                     if(scale != 1.0)
@@ -456,7 +468,7 @@ int main(int argc, char *argv[]) {
             // Init color scheme
             colorscheme_t *colorscheme;
             if(cflag) {
-                loadColorScheme(map, &colorscheme, colorfile);
+                loadColorScheme(map, &colorscheme, colorfile, wflag);
             } else {
                 setDefaultColors(map, &colorscheme, ANAX_RELATIVE_COLORS);
             }

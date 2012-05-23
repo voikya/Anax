@@ -27,3 +27,7 @@ Absolute
 2000	155	130	128
 2250	199	172	179
 2500	243	208	207
+
+# The following line sets the color of water (if the -w flag is set)
+W   136 172 255
+

@@ -28,6 +28,9 @@ void SHOW_COLOR_SCHEME(colorscheme_t *colors) {
 	for(int i = 1; i <= colors->num_stops; i++) {
 		printf("#%i: %im = [R %i, G %i, B %i, A %f]\n", i, (int)colors->colors[i].elevation, colors->colors[i].color.r, colors->colors[i].color.g, colors->colors[i].color.b, colors->colors[i].color.a);
 	}
+	if(colors->showWater) {
+	    printf("W = [R %i, G %i, B %i, A %f]\n", colors->water.color.r, colors->water.color.g, colors->water.color.b, colors->water.color.a);
+	}
 }
 
 /* END DEBUGGING FUNCTIONS */
@@ -76,9 +79,9 @@ int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile, int suppress_output, 
 	// Allocate enough memory for the entire map struct
     // (This is all done all at once to help ensure there won't be any out-of-memory
 	// errors after processing has already begun)
-	(*map)->data = malloc(((*map)->height + (2 * MAPFRAME)) * sizeof(point_t *));
+	(*map)->data = calloc(((*map)->height + (2 * MAPFRAME)), sizeof(point_t *));
 	for(int i = 0; i < (*map)->height + (2 * MAPFRAME); i++) {
-		(*map)->data[i] = malloc(((*map)->width + (2 * MAPFRAME)) * sizeof(point_t));
+		(*map)->data[i] = calloc(((*map)->width + (2 * MAPFRAME)), sizeof(point_t));
 		if((*map)->data[i] == NULL)
 			return ANAX_ERR_NO_MEMORY;
 	}
@@ -170,7 +173,7 @@ int setDefaultColors(geotiffmap_t *map, colorscheme_t **colorscheme, int isAbsol
 	return 0;
 }
 
-int loadColorScheme(geotiffmap_t *map, colorscheme_t **colorscheme, char *colorfile) {
+int loadColorScheme(geotiffmap_t *map, colorscheme_t **colorscheme, char *colorfile, int wflag) {
     FILE *fp = fopen(colorfile, "r");
     if(!fp)
         return ANAX_ERR_FILE_DOES_NOT_EXIST;
@@ -181,6 +184,7 @@ int loadColorScheme(geotiffmap_t *map, colorscheme_t **colorscheme, char *colorf
     (*colorscheme)->isAbsolute = -1;
     (*colorscheme)->num_stops = 0;
     (*colorscheme)->colors = NULL;
+    (*colorscheme)->showWater = wflag ? 1 : 0;
 
     char buf[BUFSIZE];
     while((*colorscheme)->isAbsolute == -1) {
@@ -203,17 +207,27 @@ int loadColorScheme(geotiffmap_t *map, colorscheme_t **colorscheme, char *colorf
                 continue;
             int e, r, g, b;
             int res = sscanf(buf, "%i %i %i %i", &e, &r, &g, &b);
-            if(res != 4)
-                return ANAX_ERR_INVALID_COLOR_FILE;
-            (*colorscheme)->num_stops++;
-            (*colorscheme)->colors = realloc((*colorscheme)->colors, ((*colorscheme)->num_stops + 2) * sizeof(colorstop_t));
-            if(!(*colorscheme)->colors)
-                return ANAX_ERR_NO_MEMORY;
-            (*colorscheme)->colors[(*colorscheme)->num_stops].elevation = e;
-            (*colorscheme)->colors[(*colorscheme)->num_stops].color.r = r;
-            (*colorscheme)->colors[(*colorscheme)->num_stops].color.g = g;
-            (*colorscheme)->colors[(*colorscheme)->num_stops].color.b = b;
-            (*colorscheme)->colors[(*colorscheme)->num_stops].color.a = 1.0;
+            if(res != 4) {
+                char w;
+                res = sscanf(buf, "%c %i %i %i", &w, &r, &g, &b);
+                if(res != 4 || w != 'W')
+                    return ANAX_ERR_INVALID_COLOR_FILE;
+                (*colorscheme)->water.elevation = 0;
+                (*colorscheme)->water.color.r = r;
+                (*colorscheme)->water.color.g = g;
+                (*colorscheme)->water.color.b = b;
+                (*colorscheme)->water.color.a = 1.0;
+            } else {
+                (*colorscheme)->num_stops++;
+                (*colorscheme)->colors = realloc((*colorscheme)->colors, ((*colorscheme)->num_stops + 2) * sizeof(colorstop_t));
+                if(!(*colorscheme)->colors)
+                    return ANAX_ERR_NO_MEMORY;
+                (*colorscheme)->colors[(*colorscheme)->num_stops].elevation = e;
+                (*colorscheme)->colors[(*colorscheme)->num_stops].color.r = r;
+                (*colorscheme)->colors[(*colorscheme)->num_stops].color.g = g;
+                (*colorscheme)->colors[(*colorscheme)->num_stops].color.b = b;
+                (*colorscheme)->colors[(*colorscheme)->num_stops].color.a = 1.0;
+            }
         }
     } else if((*colorscheme)->isAbsolute == ANAX_RELATIVE_COLORS) {
         while(fgets(buf, BUFSIZE, fp)) {
@@ -221,17 +235,27 @@ int loadColorScheme(geotiffmap_t *map, colorscheme_t **colorscheme, char *colorf
                 continue;
             int e, r, g, b;
             int res = sscanf(buf, "%i %i %i %i", &e, &r, &g, &b);
-            if(res != 4)
-                return ANAX_ERR_INVALID_COLOR_FILE;
-            (*colorscheme)->num_stops++;
-            (*colorscheme)->colors = realloc((*colorscheme)->colors, ((*colorscheme)->num_stops + 2) * sizeof(colorstop_t));
-            if(!(*colorscheme)->colors)
-                return ANAX_ERR_NO_MEMORY;
-            (*colorscheme)->colors[(*colorscheme)->num_stops].elevation = e;
-            (*colorscheme)->colors[(*colorscheme)->num_stops].color.r = r;
-            (*colorscheme)->colors[(*colorscheme)->num_stops].color.g = g;
-            (*colorscheme)->colors[(*colorscheme)->num_stops].color.b = b;
-            (*colorscheme)->colors[(*colorscheme)->num_stops].color.a = 1.0;
+            if(res != 4) {
+                char w;
+                res = sscanf(buf, "%c %i %i %i", &w, &r, &g, &b);
+                if(res != 4 || w != 'W')
+                    return ANAX_ERR_INVALID_COLOR_FILE;
+                (*colorscheme)->water.elevation = 0;
+                (*colorscheme)->water.color.r = r;
+                (*colorscheme)->water.color.g = g;
+                (*colorscheme)->water.color.b = b;
+                (*colorscheme)->water.color.a = 1.0;
+            } else {
+                (*colorscheme)->num_stops++;
+                (*colorscheme)->colors = realloc((*colorscheme)->colors, ((*colorscheme)->num_stops + 2) * sizeof(colorstop_t));
+                if(!(*colorscheme)->colors)
+                    return ANAX_ERR_NO_MEMORY;
+                (*colorscheme)->colors[(*colorscheme)->num_stops].elevation = e;
+                (*colorscheme)->colors[(*colorscheme)->num_stops].color.r = r;
+                (*colorscheme)->colors[(*colorscheme)->num_stops].color.g = g;
+                (*colorscheme)->colors[(*colorscheme)->num_stops].color.b = b;
+                (*colorscheme)->colors[(*colorscheme)->num_stops].color.a = 1.0;
+            }
         }
     }
 
@@ -245,6 +269,8 @@ int loadColorScheme(geotiffmap_t *map, colorscheme_t **colorscheme, char *colorf
     (*colorscheme)->colors[(*colorscheme)->num_stops + 1].color.g = (*colorscheme)->colors[(*colorscheme)->num_stops].color.g;
     (*colorscheme)->colors[(*colorscheme)->num_stops + 1].color.b = (*colorscheme)->colors[(*colorscheme)->num_stops].color.b;
     (*colorscheme)->colors[(*colorscheme)->num_stops + 1].color.a = (*colorscheme)->colors[(*colorscheme)->num_stops].color.a;
+
+    SHOW_COLOR_SCHEME(*colorscheme);
 
 	return 0;
 }
@@ -261,22 +287,68 @@ int setRelativeElevations(colorscheme_t *colorscheme, int16_t max, int16_t min) 
     return 0;
 }
 
+int findWater(geotiffmap_t *map) {
+    // Pass 1: Flag any point surrounded by points of equal elevation as water
+    for(int i = 1; i < map->height + (2 * MAPFRAME) - 1; i++) {
+        for(int j = 1; j < map->height + (2 * MAPFRAME) - 1; j++) {
+            int16_t e = map->data[i][j].elevation;
+            if(map->data[i - 1][j - 1].elevation == e &&
+               map->data[i - 1][j].elevation == e &&
+               map->data[i - 1][j + 1].elevation == e &&
+               map->data[i][j - 1].elevation == e &&
+               map->data[i][j + 1].elevation == e &&
+               map->data[i + 1][j - 1].elevation == e &&
+               map->data[i + 1][j].elevation == e &&
+               map->data[i + 1][j + 1].elevation == e) {
+                map->data[i][j].isWater = 1;
+            }
+        }
+    }
+    
+    // Pass 2: If any point has the same elevation as a neighboring point that is
+    // flagged as water, flag it as well
+    for(int i = 1; i < map->height + (2 * MAPFRAME) - 1; i++) {
+        for(int j = 1; j < map->height + (2 * MAPFRAME) - 1; j++) {
+            int16_t e = map->data[i][j].elevation;
+            if((map->data[i - 1][j - 1].isWater && map->data[i - 1][j - 1].elevation == e) ||
+               (map->data[i - 1][j].isWater && map->data[i - 1][j].elevation == e) ||
+               (map->data[i - 1][j + 1].isWater && map->data[i - 1][j + 1].elevation == e) ||
+               (map->data[i][j - 1].isWater && map->data[i][j - 1].elevation == e) ||
+               (map->data[i][j + 1].isWater && map->data[i][j + 1].elevation == e) ||
+               (map->data[i + 1][j - 1].isWater && map->data[i + 1][j - 1].elevation == e) ||
+               (map->data[i + 1][j].isWater && map->data[i + 1][j].elevation == e) ||
+               (map->data[i + 1][j + 1].isWater && map->data[i + 1][j + 1].elevation == e)) {
+                map->data[i][j].isWater = 1;
+            }
+        }
+    }
+    
+    return 0;
+}
+
 int colorize(geotiffmap_t *map, colorscheme_t *colorscheme) {
 	for(int i = MAPFRAME; i < map->height + MAPFRAME; i++) {
 		for(int j = MAPFRAME; j < map->width + MAPFRAME; j++) {
-			int stop = 0;
-			for(int n = 1; n <= colorscheme->num_stops; n++) {
-				if(colorscheme->colors[n].elevation <= map->data[i][j].elevation) {
-					stop = n;
-				} else {
-					break;
-				}
-			}
-			double percent_of_elevation_change = (double)(map->data[i][j].elevation - colorscheme->colors[stop].elevation) / (double)(colorscheme->colors[stop + 1].elevation - colorscheme->colors[stop].elevation);
-			map->data[i][j].color.r = colorscheme->colors[stop].color.r + (percent_of_elevation_change * (double)(colorscheme->colors[stop + 1].color.r - colorscheme->colors[stop].color.r));
-			map->data[i][j].color.g = colorscheme->colors[stop].color.g + (percent_of_elevation_change * (double)(colorscheme->colors[stop + 1].color.g - colorscheme->colors[stop].color.g));
-			map->data[i][j].color.b = colorscheme->colors[stop].color.b + (percent_of_elevation_change * (double)(colorscheme->colors[stop + 1].color.b - colorscheme->colors[stop].color.b));
-			map->data[i][j].color.a = 1.0;
+		    if(map->data[i][j].isWater) {
+		        map->data[i][j].color.r = colorscheme->water.color.r;
+		        map->data[i][j].color.g = colorscheme->water.color.g;
+		        map->data[i][j].color.b = colorscheme->water.color.b;
+		        map->data[i][j].color.a = 1.0;
+		    } else {
+                int stop = 0;
+                for(int n = 1; n <= colorscheme->num_stops; n++) {
+                    if(colorscheme->colors[n].elevation <= map->data[i][j].elevation) {
+                        stop = n;
+                    } else {
+                        break;
+                    }
+                }
+                double percent_of_elevation_change = (double)(map->data[i][j].elevation - colorscheme->colors[stop].elevation) / (double)(colorscheme->colors[stop + 1].elevation - colorscheme->colors[stop].elevation);
+                map->data[i][j].color.r = colorscheme->colors[stop].color.r + (percent_of_elevation_change * (double)(colorscheme->colors[stop + 1].color.r - colorscheme->colors[stop].color.r));
+                map->data[i][j].color.g = colorscheme->colors[stop].color.g + (percent_of_elevation_change * (double)(colorscheme->colors[stop + 1].color.g - colorscheme->colors[stop].color.g));
+                map->data[i][j].color.b = colorscheme->colors[stop].color.b + (percent_of_elevation_change * (double)(colorscheme->colors[stop + 1].color.b - colorscheme->colors[stop].color.b));
+                map->data[i][j].color.a = 1.0;
+            }
 		}
 	}
 
@@ -333,12 +405,15 @@ int scaleImage(geotiffmap_t **map, double scale) {
 			int16_t box_firstcol = (int)((c * step_horiz) - ((step_horiz - 1) / 2) + MAPFRAME);
 			long int sum = 0;
 			int cellcount = 0;
+			int watersum = 0;
 			for(int boxr = 0; boxr < (int)step_vert; boxr++) {
 				for(int boxc = 0; boxc < (int)step_horiz; boxc++) {
 					box[boxr][boxc] = (*map)->data[box_firstrow + boxr][box_firstcol + boxc].elevation;
 					if(box[boxr][boxc] != -9999) {
 					    sum += box[boxr][boxc];
 					    cellcount++;
+					    
+					    watersum += (*map)->data[box_firstrow + boxr][box_firstcol + boxc].isWater;
 					}
 					/*
 					if((box_firstrow + boxr >= 0) && (box_firstcol + boxc >= 0) && (box_firstrow + boxr < (*map)->height) && (box_firstcol + boxc < (*map)->width)) {
@@ -354,6 +429,9 @@ int scaleImage(geotiffmap_t **map, double scale) {
 
 			// Average the elevation and save the value
 			newmap->data[r + MAPFRAME][c + MAPFRAME].elevation = sum / cellcount;
+			
+			// Determine whether the tile contains more water or land
+			newmap->data[r + MAPFRAME][c + MAPFRAME].isWater = (watersum >= cellcount / 2) ? 1 : 0;
 		}
 	}
 
