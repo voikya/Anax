@@ -101,7 +101,7 @@ int connectToRemoteHost(destination_t *dest, char *port) {
 	return 0;
 }
 
-int initRemoteHosts(destinationlist_t *destinationlist, tilelist_t *tilelist, colorscheme_t *colorscheme, double scale) {
+int initRemoteHosts(destinationlist_t *destinationlist, tilelist_t *tilelist, colorscheme_t *colorscheme, double scale, int relief) {
     printf("Packing initialization header... ");
     fflush(stdout);
     
@@ -115,6 +115,7 @@ int initRemoteHosts(destinationlist_t *destinationlist, tilelist_t *tilelist, co
     hdr->show_water = (uint8_t)(colorscheme->showWater);
     hdr->num_colors = (uint8_t)(colorscheme->num_stops);
     hdr->scale = scale;
+    hdr->relief = relief;
     
     // If showWater is set, pack the water color scheme first
     int offset = 0;
@@ -503,7 +504,7 @@ int initRemoteListener(int *socketfd, char *port) {
     return 0;
 }
 
-int getInitHeaderData(int outsocket, int *whoami, colorscheme_t **colorscheme, double *scale) {
+int getInitHeaderData(int outsocket, int *whoami, colorscheme_t **colorscheme, double *scale, int *relief) {
     int bytes_rcvd = 0;
     uint32_t packet_size;
     
@@ -524,6 +525,7 @@ int getInitHeaderData(int outsocket, int *whoami, colorscheme_t **colorscheme, d
     // Store the data
     if(hdr->type == HDR_INITIALIZATION) {
         *scale = hdr->scale;
+        *relief = hdr->relief;
         *whoami = (int)hdr->index;
         
         *colorscheme = malloc(sizeof(colorscheme_t));

@@ -348,11 +348,100 @@ int colorize(geotiffmap_t *map, colorscheme_t *colorscheme) {
                 map->data[i][j].color.g = colorscheme->colors[stop].color.g + (percent_of_elevation_change * (double)(colorscheme->colors[stop + 1].color.g - colorscheme->colors[stop].color.g));
                 map->data[i][j].color.b = colorscheme->colors[stop].color.b + (percent_of_elevation_change * (double)(colorscheme->colors[stop + 1].color.b - colorscheme->colors[stop].color.b));
                 map->data[i][j].color.a = 1.0;
+                
+                // Apply relief shading
+                map->data[i][j].color.r -= (map->data[i][j].relief * 16);
+                map->data[i][j].color.g -= (map->data[i][j].relief * 16);
+                map->data[i][j].color.b -= (map->data[i][j].relief * 16);
+                if(map->data[i][j].color.r < 0)
+                    map->data[i][j].color.r = 0;
+                if(map->data[i][j].color.g < 0)
+                    map->data[i][j].color.g = 0;
+                if(map->data[i][j].color.b < 0)
+                    map->data[i][j].color.b = 0;
             }
 		}
 	}
 
 	return 0;
+}
+
+int reliefshade(geotiffmap_t *map, int direction) {
+    for(int i = MAPFRAME - 5; i < map->height + MAPFRAME + 5; i++) {
+        for(int j = MAPFRAME - 5; j < map->width + MAPFRAME + 5; j++) {
+            int16_t e = map->data[i][j].elevation;
+            for(int k = 1; k <= 5; k++) {
+                switch(direction) {
+                    case ANAX_MAP_NORTH:
+                        if(map->data[i + k][j].elevation < e) {
+                            map->data[i + k][j].relief++;
+                            e = map->data[i + k][j].elevation;
+                        } else {
+                            k = 9999;
+                        }
+                        break;
+                    case ANAX_MAP_SOUTH:
+                        if(map->data[i - k][j].elevation < e) {
+                            map->data[i - k][j].relief++;
+                            e = map->data[i - k][j].elevation;
+                        } else {
+                            k = 9999;
+                        }
+                        break;
+                    case ANAX_MAP_EAST:
+                        if(map->data[i][j - k].elevation < e) {
+                            map->data[i][j - k].relief++;
+                            e = map->data[i][j - k].elevation;
+                        } else {
+                            k = 9999;
+                        }
+                        break;
+                    case ANAX_MAP_WEST:
+                        if(map->data[i][j + k].elevation < e) {
+                            map->data[i][j + k].relief++;
+                            e = map->data[i][j + k].elevation;
+                        } else {
+                            k = 9999;
+                        }
+                        break;
+                    case ANAX_MAP_NORTHEAST:
+                        if(map->data[i + k][j - k].elevation < e) {
+                            map->data[i + k][j - k].relief++;
+                            e = map->data[i + k][j - k].elevation;
+                        } else {
+                            k = 9999;
+                        }
+                        break;
+                    case ANAX_MAP_NORTHWEST:
+                        if(map->data[i + k][j + k].elevation < e) {
+                            map->data[i + k][j + k].relief++;
+                            e = map->data[i + k][j + k].elevation;
+                        } else {
+                            k = 9999;
+                        }
+                        break;
+                    case ANAX_MAP_SOUTHEAST:
+                        if(map->data[i - k][j - k].elevation < e) {
+                            map->data[i - k][j - k].relief++;
+                            e = map->data[i - k][j - k].elevation;
+                        } else {
+                            k = 9999;
+                        }
+                        break;
+                    case ANAX_MAP_SOUTHWEST:
+                        if(map->data[i - k][j + k].elevation < e) {
+                            map->data[i - k][j + k].relief++;
+                            e = map->data[i - k][j + k].elevation;
+                        } else {
+                            k = 9999;
+                        }
+                        break;
+                }
+            }
+        }
+    }
+    
+    return 0;
 }
 
 void printGeotiffInfo(geotiffmap_t *map, TIFF *tiff) {
@@ -406,6 +495,7 @@ int scaleImage(geotiffmap_t **map, double scale) {
 			long int sum = 0;
 			int cellcount = 0;
 			int watersum = 0;
+			int reliefsum = 0;
 			for(int boxr = 0; boxr < (int)step_vert; boxr++) {
 				for(int boxc = 0; boxc < (int)step_horiz; boxc++) {
 					box[boxr][boxc] = (*map)->data[box_firstrow + boxr][box_firstcol + boxc].elevation;
@@ -414,6 +504,7 @@ int scaleImage(geotiffmap_t **map, double scale) {
 					    cellcount++;
 					    
 					    watersum += (*map)->data[box_firstrow + boxr][box_firstcol + boxc].isWater;
+					    reliefsum += (*map)->data[box_firstrow + boxr][box_firstcol + boxc].relief;
 					}
 					/*
 					if((box_firstrow + boxr >= 0) && (box_firstcol + boxc >= 0) && (box_firstrow + boxr < (*map)->height) && (box_firstcol + boxc < (*map)->width)) {
@@ -432,6 +523,9 @@ int scaleImage(geotiffmap_t **map, double scale) {
 			
 			// Determine whether the tile contains more water or land
 			newmap->data[r + MAPFRAME][c + MAPFRAME].isWater = (watersum >= cellcount / 2) ? 1 : 0;
+			
+			// Get the average relief value
+			newmap->data[r + MAPFRAME][c + MAPFRAME].relief = reliefsum / cellcount;
 		}
 	}
 

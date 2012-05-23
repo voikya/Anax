@@ -20,6 +20,7 @@ struct point {
 	double latitude;
 	double longitude;
 	uint8_t isWater;
+	uint8_t relief;
 	rgb_t color;
 };
 typedef struct point point_t;
@@ -104,6 +105,7 @@ int loadColorScheme(geotiffmap_t *map, colorscheme_t **colorscheme, char *colorf
 int setRelativeElevations(colorscheme_t *colorscheme, int16_t max, int16_t min);
 int findWater(geotiffmap_t *map);
 int colorize(geotiffmap_t *map, colorscheme_t *colorscheme);
+int reliefshade(geotiffmap_t *map, int direction);
 int renderPNG(geotiffmap_t *map, char *outfile, int suppress_output);
 //void updatePNGWriteStatus(png_structp png_ptr, png_uint32 row, int pass);
 int scaleImage(geotiffmap_t **map, double scale);

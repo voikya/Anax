@@ -9,13 +9,14 @@
 #include "distranax.h"
 
 void usage() {
-	fprintf(stderr, "Usage: geotiff [-cdloqsw] [SRC PATH]\n");
+	fprintf(stderr, "Usage: geotiff [-cdloqrsw] [SRC PATH]\n");
 	fprintf(stderr, "    Flags:\n");
 	fprintf(stderr, "    -c [FILEPATH]: Apply the color scheme in FILEPATH instead of the default color scheme\n");
     fprintf(stderr, "    -d [FILEPATH]: Run in distributed mode, with FILEPATH containing a list of addresses to other machines\n");
     fprintf(stderr, "    -l : Run in listening mode, waiting for a connection from an instance running in distributed mode\n");
 	fprintf(stderr, "    -o [FILEPATH]: Save the output file to FILEPATH\n");
 	fprintf(stderr, "    -q : Suppress output to stdout\n");
+	fprintf(stderr, "    -r [SOURCE]: Draw relief shading using light originating in the direction of SOURCE (one of N, S, E, W, NE, SE, NW, SW)\n");
 	fprintf(stderr, "    -s [SCALE]: Scale the output file by a factor of SCALE\n");
 	fprintf(stderr, "    -w : Try to identify bodies of water\n");
 }
@@ -31,15 +32,17 @@ int main(int argc, char *argv[]) {
 	int oflag = 0;
 	int qflag = 0;
 	int sflag = 0;
+	int rflag = 0;
 	int wflag = 0;
 	char *outfile = NULL;
 	char *colorfile = NULL;
 	char *addrfile = NULL;
 	double scale = 1.0;
+	int relief = 0;
 
 	int err;
 
-	while((c = getopt(argc, argv, "c:d:lo:qs:w")) != -1) {
+	while((c = getopt(argc, argv, "c:d:lo:qr:s:w")) != -1) {
 		switch(c) {
 			case 'c':
 				cflag = 1;
@@ -59,6 +62,30 @@ int main(int argc, char *argv[]) {
 			case 'q':
 				qflag = 1;
 				break;
+			case 'r':
+			    rflag = 1;
+			    if(!strcmp(optarg, "N"))
+			        relief = ANAX_MAP_NORTH;
+			    else if(!strcmp(optarg, "S"))
+			        relief = ANAX_MAP_SOUTH;
+			    else if(!strcmp(optarg, "E"))
+			        relief = ANAX_MAP_EAST;
+			    else if(!strcmp(optarg, "W"))
+			        relief = ANAX_MAP_WEST;
+			    else if(!strcmp(optarg, "NE"))
+			        relief = ANAX_MAP_NORTHEAST;
+			    else if(!strcmp(optarg, "SE"))
+			        relief = ANAX_MAP_SOUTHEAST;
+			    else if(!strcmp(optarg, "SW"))
+			        relief = ANAX_MAP_SOUTHWEST;
+			    else if(!strcmp(optarg, "NW"))
+			        relief = ANAX_MAP_NORTHWEST;
+			    else {
+			        fprintf(stderr, "Error: %s is not a valid argument to -w\n", optarg);
+			        usage();
+			        exit(ANAX_ERR_INVALID_INVOCATION);
+			    }
+			    break;
 			case 's':
 				sflag = 1;
 				scale = atof(optarg);
@@ -155,7 +182,7 @@ int main(int argc, char *argv[]) {
 	    pthread_mutex_init(&(tilelist->lock), NULL);
 	    
 	    // Send each remote node the colorscheme, scale, and remote node list
-	    err = initRemoteHosts(destinationlist, tilelist, colorscheme, scale);
+	    err = initRemoteHosts(destinationlist, tilelist, colorscheme, scale, relief);
 	    
 	    // Send out initial jobs
 	    err = distributeJobs(destinationlist, joblist);
@@ -209,7 +236,8 @@ int main(int argc, char *argv[]) {
         int global_min = INT16_MAX;
         colorscheme_t *colorscheme;
         double scale;
-        getInitHeaderData(outsocketfd, &whoami, &colorscheme, &scale);
+        int relief;
+        getInitHeaderData(outsocketfd, &whoami, &colorscheme, &scale, &relief);
         
         SHOW_COLOR_SCHEME(colorscheme);
         
@@ -360,19 +388,30 @@ int main(int argc, char *argv[]) {
                     printf("Rendering map %i\n", i);
                     
                     // Load the map
+                    printf("  Loading\n");
                     geotiffmap_t *map;
                     readMapData(current_job, &map);
                     
                     // Find water
                     if(colorscheme->showWater) {
+                        printf("  Identifying water\n");
                         findWater(map);
                     }
                     
+                    // Apply relief shading
+                    if(relief) {
+                        printf("  Applying relief shading\n");
+                        reliefshade(map, relief);
+                    }
+                    
                     // Scale
-                    if(scale != 1.0)
+                    if(scale != 1.0) {
+                        printf("  Scaling\n");
                         scaleImage(&map, scale);
+                    }
                     
                     // Colorize
+                    printf("  Colorizing\n");
                     colorize(map, colorscheme);
                     
                     // Render
