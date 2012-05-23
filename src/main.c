@@ -80,7 +80,8 @@ int main(int argc, char *argv[]) {
 		joblist->num_jobs++;
 		joblist->jobs = realloc(joblist->jobs, joblist->num_jobs * sizeof(anaxjob_t));
 		memset(&(joblist->jobs[i]), 0, sizeof(anaxjob_t));
-		joblist->jobs[joblist->num_jobs - 1].name = argv[i];
+		joblist->jobs[joblist->num_jobs - 1].name = calloc(strlen(argv[i] + 1), sizeof(char));
+		strcpy(joblist->jobs[joblist->num_jobs - 1].name, argv[i]);
 		joblist->jobs[joblist->num_jobs - 1].index = i;
 		joblist->jobs[joblist->num_jobs - 1].status = ANAX_STATE_PENDING;
 	}
@@ -182,6 +183,7 @@ int main(int argc, char *argv[]) {
 		finalizeLocalJobs(joblist);
 		
         // Stitch together the received images
+        stitch(tilelist, outfile, qflag);
 		
     } else if(lflag) {
         // Handle receipt of distributed rendering job
@@ -346,6 +348,7 @@ int main(int argc, char *argv[]) {
         while(rendered < localjobs->num_jobs) {
             for(int i = 0; i < localjobs->num_jobs; i++) {
                 anaxjob_t *current_job = &(localjobs->jobs[i]);
+                printf("Sleeping: Status of job %i: %i\n", i, current_job->status);
                 if(current_job->status == ANAX_STATE_RENDERING) {
                     printf("Rendering map %i\n", i);
                     

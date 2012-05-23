@@ -484,7 +484,10 @@ int writeMapData(anaxjob_t *current_job, geotiffmap_t *map) {
         for(int j = 0; j < map->width + (2 * MAPFRAME); j++) {
             buf[j] = map->data[i][j].elevation;
         }
-        fwrite(buf, sizeof(int16_t), bufsize, fp);
+        int c = 0;
+        while(c < bufsize) {
+            c += fwrite(buf + c, sizeof(int16_t), bufsize - c, fp);
+        }
     }
     
     fclose(fp);
@@ -556,6 +559,258 @@ int finalizeLocalJobs(joblist_t *joblist) {
     free(joblist->jobs);
     free(joblist);
     
+    return 0;
+}
+
+int stitch(tilelist_t *tilelist, char *outfile, int suppress_output) {
+    // Open outfile
+	FILE *out = fopen(outfile, "w");
+	png_structp png_ptr = NULL;
+	png_infop info_ptr = NULL;
+	if(!out)
+		return ANAX_ERR_NO_MEMORY;
+
+    // Determine combined image periphery
+    for(int i = 0; i < tilelist->num_tiles; i++) {
+        if(tilelist->tiles[i].north > tilelist->north_lim)
+            tilelist->north_lim = tilelist->tiles[i].north;
+        if(tilelist->tiles[i].south < tilelist->south_lim)
+            tilelist->south_lim = tilelist->tiles[i].south;
+        if(tilelist->tiles[i].east > tilelist->east_lim)
+            tilelist->east_lim = tilelist->tiles[i].east;
+        if(tilelist->tiles[i].west < tilelist->west_lim)
+            tilelist->west_lim = tilelist->tiles[i].west;
+    }
+    
+    // Get the final image width and height in pixels
+    // (This iterative method is necessary because the tiles may not
+    //  represent a rectangular area; for instance, there may be gaps)
+    int img_height = 0;
+    int img_width = 0;
+    double cur_coord = tilelist->west_lim;
+    while(cur_coord < tilelist->east_lim) {
+        for(int i = 0; i < tilelist->num_tiles; i++) {
+            // TODO: This condition needs to be better; "cur_coord + 0.01" is not very portable
+            if(tilelist->tiles[i].west >= cur_coord && tilelist->tiles[i].west <= cur_coord + 0.01) {
+                img_width += tilelist->tiles[i].img_width;
+                cur_coord = tilelist->tiles[i].east;
+                break;
+            }
+        }
+    }
+    cur_coord = tilelist->south_lim;
+    while(cur_coord < tilelist->north_lim) {
+        for(int i = 0; i < tilelist->num_tiles; i++) {
+            // TODO: This condition needs to be better; "cur_coord + 0.01" is not very portable
+            if(tilelist->tiles[i].south >= cur_coord && tilelist->tiles[i].south <= cur_coord + 0.01) {
+                img_height += tilelist->tiles[i].img_height;
+                cur_coord = tilelist->tiles[i].north;
+                break;
+            }
+        }
+    }
+    
+    // Identify the pixel coordinates each tile corresponds to
+    // TODO: This currently only works for rectilinear projections
+    //   (i.e., projections where all vertical and horizontal lines connect
+    //    points of equal longitude or latitude)
+    cur_coord = tilelist->north_lim;
+    int cur_pxl = 0;
+    while(cur_pxl < img_height) {
+        int tile_height;
+        double new_coord;
+        for(int i = 0; i < tilelist->num_tiles; i++) {
+            // TODO: This condition needs to be better; "cur_coord - 0.01" is not very portable
+            if(tilelist->tiles[i].north <= cur_coord && tilelist->tiles[i].north >= cur_coord - 0.01) {
+                tile_height = tilelist->tiles[i].img_height;
+                tilelist->tiles[i].top_row = cur_pxl;
+                tilelist->tiles[i].bottom_row = cur_pxl + tile_height - 1;
+                new_coord = tilelist->tiles[i].south;
+            }
+        }
+        cur_pxl += tile_height;
+        cur_coord = new_coord;
+    }
+    cur_coord = tilelist->west_lim;
+    cur_pxl = 0;
+    while(cur_pxl < img_width) {
+        int tile_width;
+        double new_coord;
+        for(int i = 0; i < tilelist->num_tiles; i++) {
+            // TODO: This condition needs to be better; "cur_coord + 0.01" is not very portable
+            if(tilelist->tiles[i].west >= cur_coord && tilelist->tiles[i].west <= cur_coord + 0.01) {
+                tile_width = tilelist->tiles[i].img_width;
+                tilelist->tiles[i].left_col = cur_pxl;
+                tilelist->tiles[i].right_col = cur_pxl + tile_width - 1;
+                new_coord = tilelist->tiles[i].east;
+            }
+        }
+        cur_pxl += tile_width;
+        cur_coord = new_coord;
+    }
+    
+    // Prepare the out PNG for rendering
+	png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+	if(!png_ptr)
+		return ANAX_ERR_PNG_STRUCT_FAILURE;
+	info_ptr = png_create_info_struct(png_ptr);
+	if(!info_ptr) {
+		png_destroy_write_struct(&png_ptr, (png_infopp) NULL);
+		return ANAX_ERR_PNG_STRUCT_FAILURE;
+	}
+	
+	if(setjmp(png_jmpbuf(png_ptr))) {
+		png_destroy_write_struct(&png_ptr, &info_ptr);
+		fclose(out);
+		return ANAX_ERR_PNG_STRUCT_FAILURE;
+	}
+
+	png_init_io(png_ptr, out);
+	png_set_write_status_fn(png_ptr, NULL);
+
+	png_set_compression_level(png_ptr, Z_BEST_COMPRESSION);
+
+	int bit_depth = 8;
+
+	// Set up the PNG header
+	png_set_IHDR(
+			png_ptr,
+			info_ptr,
+			img_width,						// Width of image in pixels
+			img_height, 					// Height of image in pixels
+			bit_depth, 						// Color depth of each channel
+			PNG_COLOR_TYPE_RGB_ALPHA, 		// Supported channels
+			PNG_INTERLACE_NONE,				// Interlace type
+			PNG_COMPRESSION_TYPE_DEFAULT,	// Compression type
+			PNG_FILTER_TYPE_DEFAULT			// Filter type
+	);
+	png_write_info(png_ptr, info_ptr);
+
+	if(bit_depth > 8) {
+		png_set_swap(png_ptr);
+	} else if(bit_depth < 8) {
+		png_set_packswap(png_ptr);
+	}
+
+	// Flush after every line
+	png_set_flush(png_ptr, 1);
+	
+    // Write the new image
+    int y = 0;
+    double percent_interval = (double)img_height / 100.0;
+    png_byte *row_pointer = calloc(img_width, 4 * (bit_depth / 8));
+    while(y < img_height) {
+        tile_subset_t *tile_subset;
+        getTileRowSubset(tilelist, y, img_width, &tile_subset);
+        
+        for(int i = 0; i < tile_subset->height; i++) {
+            loadRowData(row_pointer, tile_subset, img_width);
+            png_write_row(png_ptr, row_pointer);
+            y++;
+        
+            if(!suppress_output) {
+                if((int)percent_interval > 0) {
+                    if(y % (int)percent_interval == 0) {
+                        printf("%i%%\n", (int)(y / percent_interval) + 1);
+                    }
+                } else {
+                    printf("%i%%\n", (y * 100) / img_height);
+                }
+            }
+        }
+        
+        // Clean up the tile subset
+        for(int i = 0; i < tile_subset->num_tiles; i++) {
+            if(tile_subset->refs[i].fp != NULL && y == tile_subset->refs[i].tile->bottom_row) {
+                png_read_end(tile_subset->refs[i].png_ptr, NULL);
+                png_destroy_read_struct(&(tile_subset->refs[i].png_ptr), &(tile_subset->refs[i].info_ptr), &(tile_subset->refs[i].end_info));
+                fclose(tile_subset->refs[i].fp);
+            }
+        }
+        free(tile_subset->refs);
+        free(tile_subset);
+    }
+    png_write_end(png_ptr, NULL);
+    fclose(out);
+    
+    return 0;
+}
+
+int getTileRowSubset(tilelist_t *tilelist, int row, int img_width, tile_subset_t **tile_subset) {
+    int least_height = INT_MAX;
+    
+    // Initialize the tile_subset_t
+    *tile_subset = malloc(sizeof(tile_subset_t));
+    (*tile_subset)->num_tiles = 0;
+    (*tile_subset)->height = 0;
+    (*tile_subset)->refs = NULL;
+    
+    // Iterate through the tiles and identify, in order, all of the tiles that contain
+    // part of row
+    int col = 0;
+    int last_op_was_null = 0;
+    while(col < img_width) {
+        int match = 0;
+        for(int i = 0; i < tilelist->num_tiles; i++) {
+            if(row >= tilelist->tiles[i].top_row &&
+               row <= tilelist->tiles[i].bottom_row &&
+               col >= tilelist->tiles[i].left_col &&
+               col <= tilelist->tiles[i].right_col) {
+                // TODO: Check for and handle tiles that have already been opened
+                match = 1;
+                (*tile_subset)->num_tiles++;
+                (*tile_subset)->refs = realloc((*tile_subset)->refs, (*tile_subset)->num_tiles * sizeof(tile_ref_t));
+                (*tile_subset)->refs[(*tile_subset)->num_tiles - 1].tile = &(tilelist->tiles[i]);
+                (*tile_subset)->refs[(*tile_subset)->num_tiles - 1].fp = fopen(tilelist->tiles[i].name, "r");
+                (*tile_subset)->refs[(*tile_subset)->num_tiles - 1].png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+                (*tile_subset)->refs[(*tile_subset)->num_tiles - 1].info_ptr = png_create_info_struct((*tile_subset)->refs[(*tile_subset)->num_tiles - 1].png_ptr);
+                (*tile_subset)->refs[(*tile_subset)->num_tiles - 1].end_info = png_create_info_struct((*tile_subset)->refs[(*tile_subset)->num_tiles - 1].png_ptr);
+                (*tile_subset)->refs[(*tile_subset)->num_tiles - 1].width = tilelist->tiles[i].img_width;
+                png_init_io((*tile_subset)->refs[(*tile_subset)->num_tiles - 1].png_ptr, (*tile_subset)->refs[(*tile_subset)->num_tiles - 1].fp);
+                png_read_info((*tile_subset)->refs[(*tile_subset)->num_tiles - 1].png_ptr, (*tile_subset)->refs[(*tile_subset)->num_tiles - 1].info_ptr);
+                (*tile_subset)->refs[(*tile_subset)->num_tiles - 1].tile->is_open = 1;
+                least_height = (tilelist->tiles[i].img_height < least_height) ? tilelist->tiles[i].img_height : least_height;
+                last_op_was_null = 0;
+                col = tilelist->tiles[i].right_col + 1;
+                break;
+            }
+        }
+        
+        // If no match, add a NULL to the refs list
+        // If the match list already ends in a NULL, increment its width
+        if(!match) {
+            if(last_op_was_null) {
+                (*tile_subset)->refs[(*tile_subset)->num_tiles - 1].width++;
+                col++;
+            } else {
+                (*tile_subset)->num_tiles++;
+                (*tile_subset)->refs = realloc((*tile_subset)->refs, (*tile_subset)->num_tiles * sizeof(tile_ref_t));
+                (*tile_subset)->refs[(*tile_subset)->num_tiles - 1].tile = NULL;
+                (*tile_subset)->refs[(*tile_subset)->num_tiles - 1].fp = NULL;
+                (*tile_subset)->refs[(*tile_subset)->num_tiles - 1].width = 1;
+                col++;
+                // TODO: Need check/special protections if the NULL tile actually has the least height
+            }
+            last_op_was_null = 1;
+        }
+    }
+    
+    (*tile_subset)->height = least_height;
+    
+    return 0;
+}
+
+int loadRowData(png_byte *row_ptr, tile_subset_t *tile_subset, int img_width) {
+    int offset = 0;
+    for(int i = 0; i < tile_subset->num_tiles; i++) {
+        if(tile_subset->refs[i].fp) {
+            png_read_row(tile_subset->refs[i].png_ptr, row_ptr + offset, NULL);
+        } else {
+            memset(row_ptr + offset, 0, 4 * tile_subset->refs[i].width);
+        }
+        offset += (4 * tile_subset->refs[i].width);
+    }
+
     return 0;
 }
 

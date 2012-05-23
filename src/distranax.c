@@ -371,15 +371,16 @@ void *runRemoteNode(void *argt) {
         uint32_t packet_size = 0;
         uint8_t packet_type = 0;
         while(bytes_rcvd < sizeof(uint32_t)) {
-            bytes_rcvd += recv(destination->socketfd, &packet_size + bytes_rcvd, sizeof(uint32_t) - bytes_rcvd, 0);
+            bytes_rcvd += recv(destination->socketfd, (uint8_t *)&packet_size + bytes_rcvd, sizeof(uint32_t) - bytes_rcvd, 0);
         }
         bytes_rcvd += recv(destination->socketfd, &packet_type, sizeof(uint8_t), 0);
         switch(packet_type) {
             case HDR_STATUS_CHANGE:
             {
+                printf("Got status change header\n");
                 status_change_hdr_t hdr;
                 while(bytes_rcvd < sizeof(status_change_hdr_t)) {
-                    bytes_rcvd += recv(destination->socketfd, &hdr + bytes_rcvd, sizeof(status_change_hdr_t) - bytes_rcvd, 0);
+                    bytes_rcvd += recv(destination->socketfd, (uint8_t *)&hdr + bytes_rcvd, sizeof(status_change_hdr_t) - bytes_rcvd, 0);
                 }
                 switch(hdr.status) {
                     case ANAX_STATE_LOADED:
@@ -394,7 +395,9 @@ void *runRemoteNode(void *argt) {
                 break;
             }
             case HDR_PNG:
-            {            
+            {   
+                printf("Got PNG header\n");
+                
                 // Get the rest of the header
                 uint8_t *hdrbuf = malloc(sizeof(png_hdr_t));
                 while(bytes_rcvd < sizeof(png_hdr_t)) {
@@ -413,7 +416,7 @@ void *runRemoteNode(void *argt) {
                 sprintf(newtile->name, "/tmp/map%i.png", tilelist->num_tiles);
                 newtile->img_height = hdr->img_height;
                 newtile->img_width = hdr->img_width;
-                newtile->has_been_rendered = 0;
+                newtile->is_open = 0;
                 newtile->north = hdr->top;
                 newtile->south = hdr->bottom;
                 newtile->east = hdr->right;
@@ -1098,6 +1101,8 @@ int requestMapFrame(anaxjob_t *current_job, destination_t *remote, int index, in
     
     free(hdr);
     
+    sleep(1);
+    
     return 0;
 }
 
@@ -1331,6 +1336,7 @@ void *handleSharing(void *argt) {
                 }
 
                 // Send the response
+                pthread_mutex_lock(&lock);
                 int bytes_sent = 0;
                 while(bytes_sent < sizeof(send_edge_hdr_t)) {
                     bytes_sent += send(remotenodes->destinations[sender].socketfd, outhdr, sizeof(send_edge_hdr_t) - bytes_sent, 0);
@@ -1522,7 +1528,7 @@ void *sendMapFrame(void *argt) {
     pthread_mutex_t *lock = ((mapframe_threadarg_t *)argt)->lock;
     int16_t *buf = ((mapframe_threadarg_t *)argt)->buf;
     
-    pthread_mutex_lock(lock);
+    //pthread_mutex_lock(lock);
     int bytes_sent = 0;
     while(bytes_sent < numbytes) {
         bytes_sent += send(socket, buf, numbytes - bytes_sent, 0);

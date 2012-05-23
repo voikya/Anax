@@ -50,7 +50,7 @@ struct tile {
     char *name;
     int img_height;
     int img_width;
-    int has_been_rendered;
+    int is_open;
 
     // Coordinate values
     double north;
@@ -77,6 +77,23 @@ struct tile_list {
 };
 typedef struct tile_list tilelist_t;
 
+struct tile_ref {
+    tile_t *tile;
+    FILE *fp;
+    png_structp png_ptr;
+    png_infop info_ptr;
+    png_infop end_info;
+    int width;
+};
+typedef struct tile_ref tile_ref_t;
+
+struct tile_row {
+    int num_tiles;
+    int height;
+    tile_ref_t *refs;
+};
+typedef struct tile_row tile_subset_t;
+
 int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile, int suppress_output, frame_coords_t *frame);
 void printGeotiffInfo(geotiffmap_t *map, TIFF *tiff);
 int setDefaultColors(geotiffmap_t *map, colorscheme_t **colorscheme, int isAbsolute);
@@ -91,6 +108,9 @@ int writeMapData(anaxjob_t *current_job, geotiffmap_t *map);
 int readMapData(anaxjob_t *current_job, geotiffmap_t **map);
 void freeMap(geotiffmap_t *map);
 int finalizeLocalJobs(joblist_t *joblist);
+int stitch(tilelist_t *tilelist, char *outfile, int suppress_output);
+int getTileRowSubset(tilelist_t *tilelist, int row, int img_width, tile_subset_t **tile_subset);
+int loadRowData(png_byte *row_ptr, tile_subset_t *tile_subset, int img_width);
 
 void SHOW_DATA_AT_POINT(geotiffmap_t *map, int r, int c);
 void SHOW_COLOR_SCHEME(colorscheme_t *colors);
