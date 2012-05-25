@@ -29,6 +29,8 @@ struct geotiff_map {
 	char *name;
 	int height;
 	int width;
+	double vertical_pixel_scale;
+	double horizontal_pixel_scale;
 	int16_t max_elevation;
 	int16_t min_elevation;
 	point_t **data;

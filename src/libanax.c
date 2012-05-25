@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <xtiffio.h>
 #include "globals.h"
 #include "libanax.h"
 
@@ -58,6 +59,16 @@ int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile, int suppress_output, 
 	// Get dimensions of GeoTIFF file
 	TIFFGetField(tiff, TIFFTAG_IMAGEWIDTH, &((*map)->width));
 	TIFFGetField(tiff, TIFFTAG_IMAGELENGTH, &((*map)->height));
+	
+	// Get the pixel scale
+	// (These values indicate degrees per pixel. For instance, a value of
+	//  0.00028 means the distance between two pixels is 0.00028 degrees, which
+	//  at the equator is approximately 30 meters)
+	double *pixelscale;
+	int count;
+    TIFFGetField(tiff, TIFFTAG_GEOPIXELSCALE, &count, &pixelscale);
+    (*map)->horizontal_pixel_scale = pixelscale[0];
+    (*map)->vertical_pixel_scale = pixelscale[1];
 	
 	// Get the coordinates of each corner
 	double left_lon, right_lon, top_lat, bottom_lat;
@@ -534,6 +545,8 @@ int scaleImage(geotiffmap_t **map, double scale) {
 	strncpy(newmap->name, (*map)->name, strlen((*map)->name));
 	newmap->max_elevation = (*map)->max_elevation;
 	newmap->min_elevation = (*map)->min_elevation;
+	newmap->vertical_pixel_scale = (*map)->vertical_pixel_scale;
+	newmap->horizontal_pixel_scale = (*map)->horizontal_pixel_scale;
 
 	// Free the old map struct and return the new one
 	freeMap(*map);
@@ -649,6 +662,8 @@ int writeMapData(anaxjob_t *current_job, geotiffmap_t *map) {
     hdr[2] = map->max_elevation;
     hdr[3] = map->min_elevation;
     fwrite(hdr, sizeof(uint32_t), 4, fp);
+    fwrite(&(map->vertical_pixel_scale), sizeof(double), 1, fp);
+    fwrite(&(map->horizontal_pixel_scale), sizeof(double), 1, fp);
 
     int bufsize = map->width + (2 * MAPFRAME);
     int16_t buf[bufsize];
@@ -681,6 +696,8 @@ int readMapData(anaxjob_t *current_job, geotiffmap_t **map) {
     (*map)->width = hdr[1];
     (*map)->max_elevation = (int16_t)hdr[2];
     (*map)->min_elevation = (int16_t)hdr[3];
+    fread(&((*map)->vertical_pixel_scale), sizeof(double), 1, fp);
+    fread(&((*map)->horizontal_pixel_scale), sizeof(double), 1, fp);
 
     // Allocate map data array
 	(*map)->data = malloc(((*map)->height + (2 * MAPFRAME)) * sizeof(point_t *));
