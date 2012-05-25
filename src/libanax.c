@@ -8,6 +8,7 @@
 #include <xtiffio.h>
 #include "globals.h"
 #include "libanax.h"
+#include "projections.h"
 
 /* DEBUGGING FUNCTIONS */
 

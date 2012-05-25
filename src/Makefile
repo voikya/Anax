@@ -1,4 +1,4 @@
-OBJ = main.o libanax.o distranax.o
+OBJ = main.o libanax.o distranax.o projections.o
 DEP = $(OBJ:.o=.d)
 CC = gcc
 CFLAGS = -I/opt/local/include -I/usr/include/geotiff -L/opt/local/lib -std=c99 -g -Wall -MMD -MP -D_GNU_SOURCE
