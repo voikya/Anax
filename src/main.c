@@ -7,6 +7,7 @@
 #include "globals.h"
 #include "libanax.h"
 #include "distranax.h"
+#include "anaxcurses.h"
 
 void usage() {
 	fprintf(stderr, "Usage: geotiff [-cdloqrsw] [SRC PATH]\n");

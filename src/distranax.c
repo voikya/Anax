@@ -6,6 +6,7 @@
 #include <curl/curl.h>
 #include "distranax.h"
 #include "globals.h"
+#include "anaxcurses.h"
 
 /* DEBUGGING FUNCTIONS */
 

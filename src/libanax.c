@@ -9,6 +9,7 @@
 #include "globals.h"
 #include "libanax.h"
 #include "projections.h"
+#include "anaxcurses.h"
 
 /* DEBUGGING FUNCTIONS */
 
