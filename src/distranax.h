@@ -42,7 +42,8 @@ struct header_initialization {
     uint8_t num_colors;
     uint8_t index;
     uint8_t relief;
-    uint8_t fill[6];
+    uint8_t projection;
+    uint8_t fill[5];
     double scale;
     // Followed by an array of compressed_color_t
 };
@@ -195,12 +196,12 @@ typedef struct png_thread_arguments png_threadarg_t;
 void *get_in_addr(struct sockaddr *sa);
 int loadDestinationList(char *destfile, destinationlist_t **destinations);
 int connectToRemoteHost(destination_t *dest, char *port);
-int initRemoteHosts(destinationlist_t *destinationlist, tilelist_t *tilelist, colorscheme_t *colorscheme, double scale, int relief);
+int initRemoteHosts(destinationlist_t *destinationlist, tilelist_t *tilelist, colorscheme_t *colorscheme, double scale, int relief, int projection);
 int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist);
 void *runRemoteNode(void *argt);
 void *runRemoteJob(void *argt);
 int initRemoteListener(int *socketfd, char *port);
-int getInitHeaderData(int outsocket, int *whoami, colorscheme_t **colorscheme, double *scale, int *relief);
+int getInitHeaderData(int outsocket, int *whoami, colorscheme_t **colorscheme, double *scale, int *relief, int *projection);
 int getNodesHeaderData(int outsocket, destinationlist_t **remotenodes);
 int getGeoTIFF(int outsocket, joblist_t *localjobs);
 int getImageFromPrimary(int outsocket, char *filename, char *outfile, uint32_t filesize);

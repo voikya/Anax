@@ -303,7 +303,7 @@ int setRelativeElevations(colorscheme_t *colorscheme, int16_t max, int16_t min) 
 int findWater(geotiffmap_t *map) {
     // Pass 1: Flag any point surrounded by points of equal elevation as water
     for(int i = 1; i < map->height + (2 * MAPFRAME) - 1; i++) {
-        for(int j = 1; j < map->height + (2 * MAPFRAME) - 1; j++) {
+        for(int j = 1; j < map->width + (2 * MAPFRAME) - 1; j++) {
             int16_t e = map->data[i][j].elevation;
             if(map->data[i - 1][j - 1].elevation == e &&
                map->data[i - 1][j].elevation == e &&
@@ -321,7 +321,7 @@ int findWater(geotiffmap_t *map) {
     // Pass 2: If any point has the same elevation as a neighboring point that is
     // flagged as water, flag it as well
     for(int i = 1; i < map->height + (2 * MAPFRAME) - 1; i++) {
-        for(int j = 1; j < map->height + (2 * MAPFRAME) - 1; j++) {
+        for(int j = 1; j < map->width + (2 * MAPFRAME) - 1; j++) {
             int16_t e = map->data[i][j].elevation;
             if((map->data[i - 1][j - 1].isWater && map->data[i - 1][j - 1].elevation == e) ||
                (map->data[i - 1][j].isWater && map->data[i - 1][j].elevation == e) ||
@@ -336,6 +336,18 @@ int findWater(geotiffmap_t *map) {
         }
     }
     
+    return 0;
+}
+
+int applyProjection(geotiffmap_t **map, int projection) {
+    switch(projection) {
+        case PROJ_EQUIRECTANGULAR:
+            convertToEquirectangular(map);
+            break;
+        case PROJ_MERCATOR:
+            convertToMercator(map);
+            break;
+    }
     return 0;
 }
 
@@ -553,7 +565,7 @@ int scaleImage(geotiffmap_t **map, double scale) {
 	// Free the old map struct and return the new one
 	freeMap(*map);
 	*map = newmap;
-
+	
 	return 0;
 }
 

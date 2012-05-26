@@ -16,6 +16,7 @@ void usage() {
     fprintf(stderr, "    -d [FILEPATH]: Run in distributed mode, with FILEPATH containing a list of addresses to other machines\n");
     fprintf(stderr, "    -l : Run in listening mode, waiting for a connection from an instance running in distributed mode\n");
 	fprintf(stderr, "    -o [FILEPATH]: Save the output file to FILEPATH\n");
+	fprintf(stderr, "    -p [PROJECTION]: Use projection PROJECTION. Options are EQUIRECTANGULAR, MERCATOR. Default is EQUIRECTANGULAR\n");
 	fprintf(stderr, "    -q : Suppress output to stdout\n");
 	fprintf(stderr, "    -r [SOURCE]: Draw relief shading using light originating in the direction of SOURCE (one of N, S, E, W, NE, SE, NW, SW)\n");
 	fprintf(stderr, "    -s [SCALE]: Scale the output file by a factor of SCALE\n");
@@ -31,6 +32,7 @@ int main(int argc, char *argv[]) {
     int dflag = 0;
 	int lflag = 0;
 	int oflag = 0;
+	int pflag = 0;
 	int qflag = 0;
 	int sflag = 0;
 	int rflag = 0;
@@ -40,10 +42,11 @@ int main(int argc, char *argv[]) {
 	char *addrfile = NULL;
 	double scale = 1.0;
 	int relief = 0;
+	int projection = 0;
 
 	int err;
 
-	while((c = getopt(argc, argv, "c:d:lo:qr:s:w")) != -1) {
+	while((c = getopt(argc, argv, "c:d:lo:p:qr:s:w")) != -1) {
 		switch(c) {
 			case 'c':
 				cflag = 1;
@@ -60,6 +63,18 @@ int main(int argc, char *argv[]) {
 				oflag = 1;
 				outfile = optarg;
 				break;
+			case 'p':
+			    pflag = 1;
+			    if(!strcmp(optarg, "EQUIRECTANGULAR"))
+			        projection = PROJ_EQUIRECTANGULAR;
+			    else if(!strcmp(optarg, "MERCATOR"))
+			        projection = PROJ_MERCATOR;
+			    else {
+			        fprintf(stderr, "Error: %s is not a recognized projection\n", optarg);
+			        usage();
+			        exit(ANAX_ERR_INVALID_INVOCATION);
+			    }
+			    break;
 			case 'q':
 				qflag = 1;
 				break;
@@ -183,7 +198,7 @@ int main(int argc, char *argv[]) {
 	    pthread_mutex_init(&(tilelist->lock), NULL);
 	    
 	    // Send each remote node the colorscheme, scale, and remote node list
-	    err = initRemoteHosts(destinationlist, tilelist, colorscheme, scale, relief);
+	    err = initRemoteHosts(destinationlist, tilelist, colorscheme, scale, relief, projection);
 	    
 	    // Send out initial jobs
 	    err = distributeJobs(destinationlist, joblist);
@@ -237,8 +252,8 @@ int main(int argc, char *argv[]) {
         int global_min = INT16_MAX;
         colorscheme_t *colorscheme;
         double scale;
-        int relief;
-        getInitHeaderData(outsocketfd, &whoami, &colorscheme, &scale, &relief);
+        int relief, projection;
+        getInitHeaderData(outsocketfd, &whoami, &colorscheme, &scale, &relief, &projection);
         
         SHOW_COLOR_SCHEME(colorscheme);
         
@@ -298,7 +313,13 @@ int main(int argc, char *argv[]) {
             
             // Get periphery
             getCorners(map, &(current_job->top_lat), &(current_job->bottom_lat), &(current_job->left_lon), &(current_job->right_lon));
-            
+
+            // Change projections
+            if(projection) {
+                printf("  Applying new projection\n");
+                applyProjection(&map, projection);
+            }
+
             // Set LOADED status and alert other nodes
             current_job->status = ANAX_STATE_LOADED;
             sendStatusUpdate(outsocketfd, remotenodes, current_job, whoami);

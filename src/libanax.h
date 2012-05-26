@@ -106,6 +106,7 @@ int setDefaultColors(geotiffmap_t *map, colorscheme_t **colorscheme, int isAbsol
 int loadColorScheme(geotiffmap_t *map, colorscheme_t **colorscheme, char *colorfile, int wflag);
 int setRelativeElevations(colorscheme_t *colorscheme, int16_t max, int16_t min);
 int findWater(geotiffmap_t *map);
+int applyProjection(geotiffmap_t **map, int projection);
 int colorize(geotiffmap_t *map, colorscheme_t *colorscheme);
 int reliefshade(geotiffmap_t *map, int direction);
 int renderPNG(geotiffmap_t *map, char *outfile, int suppress_output);

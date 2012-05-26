@@ -34,6 +34,9 @@
 #define ANAX_MAP_SOUTHWEST                          7
 #define ANAX_MAP_SOUTHEAST                          8
 
+#define PROJ_EQUIRECTANGULAR                        0
+#define PROJ_MERCATOR                               1
+
 #define BUFSIZE										1024
 #define REMOTE_PORT									"51777"
 #define COMM_PORT                                   "51778"
