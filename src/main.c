@@ -488,64 +488,134 @@ int main(int argc, char *argv[]) {
 		
 	} else {
 	    // Handle local rendering
-
+	    
+	    int local_max = INT16_MIN;
+        int local_min = INT16_MAX;
+        
+        // Initialize color scheme
+	    colorscheme_t *colorscheme;
+	    if(cflag) {
+	        loadColorScheme(NULL, &colorscheme, colorfile, wflag);
+	    } else {
+	        setDefaultColors(NULL, &colorscheme, ANAX_RELATIVE_COLORS);
+	    }
+	    
 	    for(int i = 0; i < joblist->num_jobs; i++) {
+	        // Open TIFF file
+	        TIFF *srctiff = XTIFFOpen(joblist->jobs[i].name, "r");
+	        if(srctiff == NULL) {
+	            fprintf(stderr, "Error: No such file: %s\n", joblist->jobs[i].name);
+	            exit(ANAX_ERR_FILE_DOES_NOT_EXIST);
+	        }
+	        
+	        // Set the new name for the outfile (PNG) and tempfile (TMP)
+	        joblist->jobs[i].outfile = malloc(32);
+	        joblist->jobs[i].tmpfile = malloc(32);
+	        sprintf(joblist->jobs[i].tmpfile, "/tmp/map%i.tmp", i);
+	        sprintf(joblist->jobs[i].outfile, "/tmp/map%i.png", i);
+	        
+	        // Load data from GeoTIFF
+	        geotiffmap_t *map;
+	        frame_coords_t *frame = malloc(sizeof(frame_coords_t));
+	        err = initMap(&map, srctiff, joblist->jobs[i].name, qflag, frame);
+	        if(err)
+	            exit(err);
+	        XTIFFClose(srctiff);
+	        
+	        // Store the frame coordinates
+	        memcpy(&(joblist->jobs[i].frame_coordinates), frame, sizeof(frame_coords_t));
+	        
+	        // Get periphery
+	        getCorners(map, &(joblist->jobs[i].top_lat), &(joblist->jobs[i].bottom_lat), &(joblist->jobs[i].left_lon), &(joblist->jobs[i].right_lon));
+	        
+	        // Change projections
+	        if(projection)
+	            applyProjection(&map, projection);
+	        
+	        // Update elevation extreme variables
+	        local_max = (map->max_elevation > local_max) ? map->max_elevation : local_max;
+	        local_min = (map->min_elevation < local_min) ? map->min_elevation : local_min;
+	        
+	        // Write the map data to a temporary file
+	        writeMapData(&(joblist->jobs[i]), map);
+	        
+	        // Free the map
+	        freeMap(map);
+	    }
+	    
+	    // Check for neighboring images amongst local tiles
+	    for(int i = 0; i < joblist->num_jobs; i++) {
+	        queryForMapFrameLocal(&(joblist->jobs[i]), joblist);
+	    }
+	    
+	    // If the colorscheme is relative, update it with the appropriate scale
+	    if(colorscheme->isAbsolute == ANAX_RELATIVE_COLORS) {
+	        setRelativeElevations(colorscheme, local_max, local_min);
+	    }
+	    
+	    // Render all maps
+	    for(int i = 0; i < joblist->num_jobs; i++) {
+	        // Load the map
+	        geotiffmap_t *map;
+	        readMapData(&(joblist->jobs[i]), &map);
+	        
+	        // Find water
+	        if(colorscheme->showWater)
+	            findWater(map);
+	            
+	        // Apply relief shading
+	        if(relief)
+	            reliefshade(map, relief);
+	        
+	        // Scale
+	        if(scale != 1.0)
+	            scaleImage(&map, scale);
+	        
+	        // Colorize
+	        colorize(map, colorscheme);
+	        
+	        // Render
+	        renderPNG(map, joblist->jobs[i].outfile, qflag);
+	        
+	        // Get final image dimensions
+	        joblist->jobs[i].img_height = map->height;
+	        joblist->jobs[i].img_width = map->width;
+	        
+	        // Free the map
+	        freeMap(map);
+	    }
+	    
+	    // Initialize a tile list
+	    tilelist_t *tilelist = malloc(sizeof(tilelist_t));
+	    tilelist->num_tiles = joblist->num_jobs;
+	    tilelist->tiles = malloc(joblist->num_jobs * sizeof(tile_t));
+	    tilelist->north_lim = -DBL_MAX;
+	    tilelist->south_lim = DBL_MAX;
+	    tilelist->east_lim = -DBL_MAX;
+	    tilelist->west_lim = DBL_MAX;
 
-            ////// The following code is temporary
-            ////// Remove it once proper stitching is implemented
-            char cwd[FILENAME_MAX];
-            char srcfile[FILENAME_MAX];
-            getcwd(cwd, FILENAME_MAX);
-            sprintf(outfile, "%s/out%i.png", cwd, i);
-            strcpy(srcfile, joblist->jobs[i].name);
-            ////// End temporary code
-    
-            // Open TIFF file
-            TIFF *srctiff = XTIFFOpen(srcfile, "r");
-            if(srctiff == NULL) {
-                fprintf(stderr, "Error: No such file: %s\n", srcfile);
-                exit(ANAX_ERR_FILE_DOES_NOT_EXIST);
-            }
-    
-            // Load data from GeoTIFF
-            geotiffmap_t *map;
-            frame_coords_t *frame = malloc(sizeof(frame_coords_t));
-            err = initMap(&map, srctiff, srcfile, qflag, frame);
-            if(err)
-                exit(err);
-            
-            // Get corners
-            getCorners(map, &(joblist->jobs[i].top_lat), &(joblist->jobs[i].bottom_lat), &(joblist->jobs[i].left_lon), &(joblist->jobs[i].right_lon));
-    
-            // Scale
-            if(scale != 1.0) {
-                if(scale > 1.0) {
-                    printf("Scale must be between 0 and 1.\n");
-                } else {
-                    scaleImage(&map, scale);
-                }
-            }
-    
-            // Init color scheme
-            colorscheme_t *colorscheme;
-            if(cflag) {
-                loadColorScheme(map, &colorscheme, colorfile, wflag);
-            } else {
-                setDefaultColors(map, &colorscheme, ANAX_RELATIVE_COLORS);
-            }
-            if(colorscheme->isAbsolute == ANAX_RELATIVE_COLORS)
-                setRelativeElevations(colorscheme, map->max_elevation, map->min_elevation);
-            colorize(map, colorscheme);
-    
-            // Close TIFF
-            XTIFFClose(srctiff);
-    
-            // Render PNG
-            renderPNG(map, outfile, qflag);
-            
-            // Free the map
-            freeMap(map);
+        // Add tiles to the tile list
+        for(int i = 0; i < tilelist->num_tiles; i++) {
+            tilelist->tiles[i].name = calloc(32, sizeof(char));
+            strcpy(tilelist->tiles[i].name, joblist->jobs[i].outfile);
+            tilelist->tiles[i].img_height = joblist->jobs[i].img_height;
+            tilelist->tiles[i].img_width = joblist->jobs[i].img_width;
+            tilelist->tiles[i].is_open = 0;
+            tilelist->tiles[i].north = joblist->jobs[i].top_lat;
+            tilelist->tiles[i].south = joblist->jobs[i].bottom_lat;
+            tilelist->tiles[i].east = joblist->jobs[i].right_lon;
+            tilelist->tiles[i].west = joblist->jobs[i].left_lon;
+            tilelist->tiles[i].top_row = 0;
+            tilelist->tiles[i].bottom_row = 0;
+            tilelist->tiles[i].left_col = 0;
+            tilelist->tiles[i].right_col = 0;
         }
+        
+        // Clean up job list
+        finalizeLocalJobs(joblist);
+        
+        // Stitch together the tiles
+        stitch(tilelist, outfile, qflag);
 	}
 
 	return 0;
