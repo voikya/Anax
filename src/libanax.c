@@ -149,8 +149,8 @@ int initMap(geotiffmap_t **map, TIFF *tiff, char *srcfile, int suppress_output, 
 	frame->east_lon = (*map)->data[(*map)->height / 2 + MAPFRAME][(*map)->width + MAPFRAME - 1].longitude + ((MAPFRAME / 2.0) * lon_step);
 	frame->mid_lon = midpoint->longitude;
 
-	if(!suppress_output)
-		printGeotiffInfo(*map, tiff);
+	// if(!suppress_output)
+	//  printGeotiffInfo(*map, tiff);
 	return 0;
 }
 
@@ -283,7 +283,7 @@ int loadColorScheme(geotiffmap_t *map, colorscheme_t **colorscheme, char *colorf
     (*colorscheme)->colors[(*colorscheme)->num_stops + 1].color.b = (*colorscheme)->colors[(*colorscheme)->num_stops].color.b;
     (*colorscheme)->colors[(*colorscheme)->num_stops + 1].color.a = (*colorscheme)->colors[(*colorscheme)->num_stops].color.a;
 
-    SHOW_COLOR_SCHEME(*colorscheme);
+    // SHOW_COLOR_SCHEME(*colorscheme);
 
 	return 0;
 }
@@ -637,15 +637,15 @@ int renderPNG(geotiffmap_t *map, char *outfile, int suppress_output) {
 
 		png_write_row(png_ptr, row_pointer);
 
-		if(!suppress_output) {
-			if((int)percent_interval > 0) {
-				if((i - MAPFRAME) % (int)percent_interval == 0) {
-					printf("%i%%\n", (int)((i - MAPFRAME) / percent_interval) + 1);
-				}
-			} else {
-				printf("%i%%\n", ((i - MAPFRAME) * 100) / (int)map->height);
-			}
-		}
+		//if(!suppress_output) {
+		//	if((int)percent_interval > 0) {
+		//		if((i - MAPFRAME) % (int)percent_interval == 0) {
+		//			printf("%i%%\n", (int)((i - MAPFRAME) / percent_interval) + 1);
+		//		}
+		//	} else {
+		//		printf("%i%%\n", ((i - MAPFRAME) * 100) / (int)map->height);
+		//	}
+		//}
 	}
 	png_write_end(png_ptr, NULL);
 	

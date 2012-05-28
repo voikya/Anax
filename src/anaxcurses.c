@@ -115,6 +115,7 @@ int updateJobView(jobui_t *jobui) {
             break;
         case UI_STATE_COMPLETE:
             sprintf(status, "[COMPLETE]  ");
+            break;
     }
     
     // Format the status bar
@@ -132,16 +133,50 @@ int updateJobView(jobui_t *jobui) {
     // Format the percent complete indicator
     //    Length: 4 characters
     //    Description: Right-aligned percentage, space-padded
-    char percent[5];
-    sprintf(percent, "%3i%%", jobui->percent);
+    char percentage[6];
+    sprintf(percentage, "%i%%%%", jobui->percent);
     
     // Form the combined output string
-    sprintf(output, "%s %s %s   %s %s", index, name, status, statusbar, percent);
+    sprintf(output, "%s %s %s   %s %s", index, name, status, statusbar, percentage);
     
     // Print the string to the terminal
     wmove(jobui->window, 0, 0);
     wprintw(jobui->window, output);
     wrefresh(jobui->window);
     
+    return 0;
+}
+
+int updateJobUIState(jobui_t *jobui, int state) {
+    jobui->state = state;
+    switch(state) {
+        case UI_STATE_PENDING:
+            jobui->percent = 0;
+        case UI_STATE_RECEIVING:
+            jobui->percent += 0;
+            break;
+        case UI_STATE_PROCESSING:
+            jobui->percent += 10;
+            break;
+        case UI_STATE_LOCALCHK:
+            jobui->percent += 5;
+            break;
+        case UI_STATE_REMOTECHK:
+            jobui->percent += 25;
+            break;
+        case UI_STATE_PREPARING:
+            jobui->percent += 25;
+            break;
+        case UI_STATE_RENDERING:
+            jobui->percent += 5;
+            break;
+        case UI_STATE_SENDING:
+            jobui->percent += 20;
+            break;
+        case UI_STATE_COMPLETE:
+            jobui->percent += 10;
+            break;
+    }
+
     return 0;
 }

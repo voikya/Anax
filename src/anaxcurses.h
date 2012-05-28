@@ -6,7 +6,7 @@
 #include <string.h>
 #include "globals.h"
 
-#define LINESIZE    111
+#define LINESIZE    112
 
 struct jobui {
     int index;
@@ -28,5 +28,6 @@ int initUIList(uilist_t **uilist, joblist_t *joblist);
 int initWindows(uilist_t *uilist);
 void endWindows();
 int updateJobView(jobui_t *jobui);
+int updateJobUIState(jobui_t *jobui, int state);
 
 #endif

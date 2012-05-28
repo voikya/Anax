@@ -119,7 +119,7 @@ int main(int argc, char *argv[]) {
 				exit(ANAX_ERR_INVALID_INVOCATION);
 				break;
 		}
-	}   
+	}
 
 	joblist_t *joblist = malloc(sizeof(joblist_t));
 	joblist->jobs = NULL;
@@ -137,6 +137,12 @@ int main(int argc, char *argv[]) {
 		fprintf(stderr, "Error: Source file(s) must be specified\n");
 		usage();
 		exit(ANAX_ERR_INVALID_INVOCATION);
+	}
+
+    uilist_t *uilist;	
+	if(!qflag) {
+	    initUIList(&uilist, joblist);
+	    initWindows(uilist);
 	}
 
 /*
@@ -159,8 +165,6 @@ int main(int argc, char *argv[]) {
 		getcwd(cwd, FILENAME_MAX);
 		outfile = calloc(FILENAME_MAX, sizeof(char));
 		sprintf(outfile, "%s%s", cwd, "/out.png");
-		if(!qflag)
-			printf("%s\n", outfile);
 	}
 
 	if(dflag) {
@@ -501,6 +505,11 @@ int main(int argc, char *argv[]) {
 	    }
 	    
 	    for(int i = 0; i < joblist->num_jobs; i++) {
+	        if(!qflag) {
+	            updateJobUIState(&(uilist->jobuis[i]), UI_STATE_RECEIVING);
+	            updateJobView(&(uilist->jobuis[i]));
+	        }
+	    
 	        // Open TIFF file
 	        TIFF *srctiff = XTIFFOpen(joblist->jobs[i].name, "r");
 	        if(srctiff == NULL) {
@@ -513,6 +522,11 @@ int main(int argc, char *argv[]) {
 	        joblist->jobs[i].tmpfile = malloc(32);
 	        sprintf(joblist->jobs[i].tmpfile, "/tmp/map%i.tmp", i);
 	        sprintf(joblist->jobs[i].outfile, "/tmp/map%i.png", i);
+	        
+	        if(!qflag) {
+	            updateJobUIState(&(uilist->jobuis[i]), UI_STATE_PROCESSING);
+	            updateJobView(&(uilist->jobuis[i]));
+	        }
 	        
 	        // Load data from GeoTIFF
 	        geotiffmap_t *map;
@@ -545,7 +559,19 @@ int main(int argc, char *argv[]) {
 	    
 	    // Check for neighboring images amongst local tiles
 	    for(int i = 0; i < joblist->num_jobs; i++) {
+	        if(!qflag) {
+	            updateJobUIState(&(uilist->jobuis[i]), UI_STATE_LOCALCHK);
+	            updateJobView(&(uilist->jobuis[i]));
+	        }
+	        
 	        queryForMapFrameLocal(&(joblist->jobs[i]), joblist);
+	        
+	        if(!qflag) {
+	            updateJobUIState(&(uilist->jobuis[i]), UI_STATE_REMOTECHK);
+	            updateJobView(&(uilist->jobuis[i]));
+	            updateJobUIState(&(uilist->jobuis[i]), UI_STATE_PREPARING);
+	            updateJobView(&(uilist->jobuis[i]));
+	        }
 	    }
 	    
 	    // If the colorscheme is relative, update it with the appropriate scale
@@ -575,6 +601,10 @@ int main(int argc, char *argv[]) {
 	        colorize(map, colorscheme);
 	        
 	        // Render
+	        if(!qflag) {
+	            updateJobUIState(&(uilist->jobuis[i]), UI_STATE_RENDERING);
+	            updateJobView(&(uilist->jobuis[i]));
+	        }
 	        renderPNG(map, joblist->jobs[i].outfile, qflag);
 	        
 	        // Get final image dimensions
@@ -583,6 +613,13 @@ int main(int argc, char *argv[]) {
 	        
 	        // Free the map
 	        freeMap(map);
+
+	        if(!qflag) {
+	            updateJobUIState(&(uilist->jobuis[i]), UI_STATE_SENDING);
+	            updateJobView(&(uilist->jobuis[i]));
+	            updateJobUIState(&(uilist->jobuis[i]), UI_STATE_COMPLETE);
+	            updateJobView(&(uilist->jobuis[i]));
+	        }
 	    }
 	    
 	    // Initialize a tile list
@@ -616,6 +653,10 @@ int main(int argc, char *argv[]) {
         
         // Stitch together the tiles
         stitch(tilelist, outfile, qflag);
+	}
+	
+	if(!qflag) {
+	    endWindows();
 	}
 
 	return 0;
