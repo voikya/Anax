@@ -25,6 +25,16 @@
 #define ANAX_STATE_NOJOB							6
 #define ANAX_STATE_LOST								7
 
+#define UI_STATE_PENDING                            0
+#define UI_STATE_RECEIVING                          1
+#define UI_STATE_PROCESSING                         2
+#define UI_STATE_LOCALCHK                           3
+#define UI_STATE_REMOTECHK                          4
+#define UI_STATE_PREPARING                          5
+#define UI_STATE_RENDERING                          6
+#define UI_STATE_SENDING                            7
+#define UI_STATE_COMPLETE                           8
+
 #define ANAX_MAP_NORTH                              1
 #define ANAX_MAP_SOUTH                              2
 #define ANAX_MAP_WEST                               3
