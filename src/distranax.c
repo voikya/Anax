@@ -1700,21 +1700,6 @@ void *returnPNGthread(void *argt) {
     return NULL;
 }
 
-int sendCorners(int outsocket, double top, double bottom, double left, double right) {
-    double buf[4];
-    buf[0] = top;
-    buf[1] = bottom;
-    buf[2] = left;
-    buf[3] = right;
-    
-    int bytes_sent = 0;
-    while(bytes_sent < 4 * sizeof(double)) {
-        bytes_sent += send(outsocket, &buf, 4, 0);
-    }
-    
-    return 0;
-}
-
 int getJobIndex(destination_t *dest, int index) {
     for(int i = 0; i < dest->num_jobs; i++) {
         if(dest->jobs[i]->index == index)
