@@ -102,10 +102,7 @@ int connectToRemoteHost(destination_t *dest, char *port) {
 	return 0;
 }
 
-int initRemoteHosts(destinationlist_t *destinationlist, tilelist_t *tilelist, colorscheme_t *colorscheme, double scale, int relief, int projection) {
-    printf("Packing initialization header... ");
-    fflush(stdout);
-    
+int initRemoteHosts(destinationlist_t *destinationlist, tilelist_t *tilelist, colorscheme_t *colorscheme, double scale, int relief, int projection, uilist_t *uilist) {
     // Allocate and pack an initialization header
     int packetsize = sizeof(init_hdr_t) + (sizeof(compressed_color_t) * colorscheme->num_stops) + ((colorscheme->showWater) ? sizeof(compressed_color_t) : 0);
     uint8_t *packet = calloc(packetsize, sizeof(uint8_t));
@@ -162,9 +159,7 @@ int initRemoteHosts(destinationlist_t *destinationlist, tilelist_t *tilelist, co
         memcpy(cur_pos + 2, &(destinationlist->destinations[i].addr), strlen(destinationlist->destinations[i].addr));
         cur_pos += 2 + strlen(destinationlist->destinations[i].addr);
     }
-    
-    printf("Done\n");
-    printf("Initializing remote nodes...");
+
     fflush(stdout);
 
     // Launch a new thread for each remote node
@@ -178,12 +173,11 @@ int initRemoteHosts(destinationlist_t *destinationlist, tilelist_t *tilelist, co
             argt->nodes_pkt = packet2;
             argt->nodes_pkt_size = (int)(hdr2->packet_size);
             argt->index = (uint8_t)i;
+            argt->uilist = uilist;
             
             pthread_create(&(destinationlist->destinations[i].thread), NULL, runRemoteNode, argt);
         }
     }
-    
-    printf("Done\n");
     
     return 0;
 }
@@ -205,14 +199,11 @@ int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist) {
                 pthread_cond_signal(&(destinationlist->destinations[i].ready_cond));
                 pthread_mutex_unlock(&(destinationlist->destinations[i].ready_mutex));
                 
-                printf("Assigning %s to %s.\n", joblist->jobs[j].name, destinationlist->destinations[i].addr);
-                
                 break;
             }
             
             // If there are no more jobs available, let the thread know it is done
             if(destinationlist->destinations[i].status == ANAX_STATE_NOJOB) {
-                printf("Sending termination message to %s.\n", destinationlist->destinations[i].addr);
                 pthread_mutex_lock(&(destinationlist->destinations[i].ready_mutex));
                 destinationlist->destinations[i].complete = 1;
                 destinationlist->destinations[i].ready = 1;
@@ -229,6 +220,7 @@ void *runRemoteNode(void *argt) {
     // Unpack thread argument struct
     destination_t *destination = ((threadarg_t *)argt)->dest;
     tilelist_t *tilelist = ((threadarg_t *)argt)->tilelist;
+    uilist_t *uilist = ((threadarg_t *)argt)->uilist;
     uint8_t *init_pkt = ((threadarg_t *)argt)->init_pkt;
     int init_pkt_size = ((threadarg_t *)argt)->init_pkt_size;
 
@@ -344,9 +336,31 @@ void *runRemoteNode(void *argt) {
             fclose(fp);
         }
         
-        // Wait for a status update response from the remote node
+        // Update the UI
+        if(uilist) {
+            updateJobUIState(&(uilist->jobuis[newjob->index]), UI_STATE_RECEIVING);
+            updateJobView(&(uilist->jobuis[newjob->index]));
+        }
+        
+        // Wait for a UI status update response
         uint32_t packet_size;
-        int bytes_rcvd = 0;
+        int bytes_rcvd = 0; 
+        while(bytes_rcvd < sizeof(uint32_t)) {
+            bytes_rcvd += recv(destination->socketfd, &packet_size, sizeof(uint32_t) - bytes_rcvd, 0);
+        }
+        uint8_t uibuf[packet_size];
+        while(bytes_rcvd < packet_size) {
+            bytes_rcvd += recv(destination->socketfd, uibuf + bytes_rcvd, packet_size - bytes_rcvd, 0);
+        }
+        if(((ui_hdr_t *)uibuf)->type == HDR_UI_UPDATE) {
+            if(uilist) {
+                updateJobUIState(&(uilist->jobuis[newjob->index]), UI_STATE_PROCESSING);
+                updateJobView(&(uilist->jobuis[newjob->index]));
+            }
+        }
+        
+        // Wait for a status update response from the remote node
+        bytes_rcvd = 0;
         while(bytes_rcvd < sizeof(uint32_t)) {
             bytes_rcvd += recv(destination->socketfd, &packet_size, sizeof(uint32_t) - bytes_rcvd, 0);
         }
@@ -355,6 +369,12 @@ void *runRemoteNode(void *argt) {
             bytes_rcvd += recv(destination->socketfd, buf + bytes_rcvd, packet_size - bytes_rcvd, 0);
         }
         status_change_hdr_t *hdr = (status_change_hdr_t *)buf;
+        
+        // Update the UI
+        if(uilist) {
+            updateJobUIState(&(uilist->jobuis[newjob->index]), UI_STATE_LOCALCHK);
+            updateJobView(&(uilist->jobuis[newjob->index]));
+        }
         
         // Update local variables and signal the main thread that a new job is needed
         if(hdr->type == HDR_STATUS_CHANGE) {
@@ -380,7 +400,16 @@ void *runRemoteNode(void *argt) {
     }
     destination->status = ANAX_STATE_COMPLETE;
     
+    // Update the UI
+    if(uilist) {
+        for(int i = 0; i < destination->num_jobs; i++) {
+            updateJobUIState(&(uilist->jobuis[destination->jobs[i]->index]), UI_STATE_REMOTECHK);
+            updateJobView(&(uilist->jobuis[destination->jobs[i]->index]));
+        }
+    }
+    
     // Handle LOADED, COMPLETE, and NOJOB status updates from remote
+    // Handle UI updates
     // Receive rendered PNGs from remote    
     int num_rcvd = 0;
     while(num_rcvd < destination->num_jobs) {
@@ -394,7 +423,6 @@ void *runRemoteNode(void *argt) {
         switch(packet_type) {
             case HDR_STATUS_CHANGE:
             {
-                printf("Got status change header\n");
                 status_change_hdr_t hdr;
                 while(bytes_rcvd < sizeof(status_change_hdr_t)) {
                     bytes_rcvd += recv(destination->socketfd, (uint8_t *)&hdr + bytes_rcvd, sizeof(status_change_hdr_t) - bytes_rcvd, 0);
@@ -411,10 +439,20 @@ void *runRemoteNode(void *argt) {
                 }
                 break;
             }
+            case HDR_UI_UPDATE:
+            {
+                ui_hdr_t hdr;
+                while(bytes_rcvd < sizeof(ui_hdr_t)) {
+                    bytes_rcvd += recv(destination->socketfd, (uint8_t *)&hdr + bytes_rcvd, sizeof(ui_hdr_t) - bytes_rcvd, 0);
+                }
+                if(uilist) {
+                    updateJobUIState(&(uilist->jobuis[hdr.job_id]), hdr.status);
+                    updateJobView(&(uilist->jobuis[hdr.job_id]));
+                }
+                break;
+            }
             case HDR_PNG:
-            {   
-                printf("Got PNG header\n");
-                
+            {                   
                 // Get the rest of the header
                 uint8_t *hdrbuf = malloc(sizeof(png_hdr_t));
                 while(bytes_rcvd < sizeof(png_hdr_t)) {
@@ -452,19 +490,22 @@ void *runRemoteNode(void *argt) {
                 // Get and write the image
                 uint8_t buf[8192]; // 8 kilobytes
                 while(bytes_rcvd < packet_size) {
-                    int bytes_rcvd_tmp = recv(destination->socketfd, buf, 8192, 0);
+                    int bytes_rcvd_tmp = recv(destination->socketfd, buf, (packet_size - bytes_rcvd < 8192 ? packet_size - bytes_rcvd : 8192), 0);
                     fwrite(buf, sizeof(uint8_t), bytes_rcvd_tmp, fp);
                     bytes_rcvd += bytes_rcvd_tmp;
                 }
                 fclose(fp);
                 
+                if(uilist) {
+                    updateJobUIState(&(uilist->jobuis[hdr->index]), UI_STATE_COMPLETE);
+                    updateJobView(&(uilist->jobuis[hdr->index]));
+                }
+                                
                 num_rcvd++;
                 break;
             }
         }
     }
-    
-    printf("Thread ending\n");
     
     // Alert the main thread to check statuses
     pthread_mutex_lock(&ready_mutex);
@@ -764,12 +805,37 @@ int sendStatusUpdate(int outsocket, destinationlist_t *remotenodes, anaxjob_t *c
     
     // Send update to primary node
     if(current_job) {
+        pthread_mutex_lock(&send_lock);
         int bytes_sent = 0;
         while(bytes_sent < sizeof(status_change_hdr_t)) {
             bytes_sent += send(outsocket, hdr, sizeof(status_change_hdr_t) - bytes_sent, 0);
         }
+        pthread_mutex_unlock(&send_lock);
     }
     
+    return 0;
+}
+
+int sendUIUpdate(int outsocket, anaxjob_t *current_job, uint8_t status) {
+    // Allocate UI update header
+    ui_hdr_t *hdr = malloc(sizeof(ui_hdr_t));
+    
+    // Pack header
+    hdr->packet_size = (uint32_t)sizeof(ui_hdr_t);
+    hdr->type = HDR_UI_UPDATE;
+    hdr->status = status;
+    hdr->job_id = current_job->index;
+    
+    // Send update to primary node
+    pthread_mutex_lock(&send_lock);
+    int bytes_sent = 0;
+    while(bytes_sent < sizeof(ui_hdr_t)) {
+        bytes_sent += send(outsocket, hdr, sizeof(ui_hdr_t) - bytes_sent, 0);
+    }
+    pthread_mutex_unlock(&send_lock);
+    
+    free(hdr);
+
     return 0;
 }
 

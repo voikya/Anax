@@ -10,6 +10,7 @@
 #include <pthread.h>
 #include "globals.h"
 #include "libanax.h"
+#include "anaxcurses.h"
 
 #define HDR_INITIALIZATION      0x01
 #define HDR_NODES               0x02
@@ -20,6 +21,7 @@
 #define HDR_SEND_MIN_MAX        0x07
 #define HDR_PNG                 0x08
 #define HDR_END                 0x09
+#define HDR_UI_UPDATE           0x10
 
 #define PACKET_HAS_DATA         0x01
 #define PACKET_HAS_URL          0x02
@@ -95,6 +97,14 @@ struct header_status {
 };
 typedef struct header_status status_change_hdr_t;
 
+struct header_ui_update {
+    uint32_t packet_size;
+    uint8_t type; // HDR_UI_UPDATE
+    uint8_t status; // UI_STATE_*
+    uint16_t job_id;
+};
+typedef struct header_ui_update ui_hdr_t;
+
 struct header_request_edge {
     uint32_t packet_size;
     uint8_t type; // HDR_REQ_EDGE
@@ -160,6 +170,7 @@ struct thread_arguments {
     uint8_t *nodes_pkt;
     int nodes_pkt_size;
     int index;
+    uilist_t *uilist;
 };
 typedef struct thread_arguments threadarg_t;
 
@@ -196,7 +207,7 @@ typedef struct png_thread_arguments png_threadarg_t;
 void *get_in_addr(struct sockaddr *sa);
 int loadDestinationList(char *destfile, destinationlist_t **destinations);
 int connectToRemoteHost(destination_t *dest, char *port);
-int initRemoteHosts(destinationlist_t *destinationlist, tilelist_t *tilelist, colorscheme_t *colorscheme, double scale, int relief, int projection);
+int initRemoteHosts(destinationlist_t *destinationlist, tilelist_t *tilelist, colorscheme_t *colorscheme, double scale, int relief, int projection, uilist_t *uilist);
 int distributeJobs(destinationlist_t *destinationlist, joblist_t *joblist);
 void *runRemoteNode(void *argt);
 void *runRemoteJob(void *argt);
@@ -207,6 +218,7 @@ int getGeoTIFF(int outsocket, joblist_t *localjobs);
 int getImageFromPrimary(int outsocket, char *filename, char *outfile, uint32_t filesize);
 int downloadImage(char *filename, char *outfile);
 int sendStatusUpdate(int outsocket, destinationlist_t *remotenodes, anaxjob_t *current_job, int whoami);
+int sendUIUpdate(int outsocket, anaxjob_t *current_job, uint8_t status);
 int queryForMapFrameLocal(anaxjob_t *current_job, joblist_t *localjobs);
 int queryForMapFrame(anaxjob_t *current_job, destinationlist_t *remotenodes);
 int requestMapFrame(anaxjob_t *current_job, destination_t *remote, int index, int request);

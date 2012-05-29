@@ -43,11 +43,14 @@ int initUIList(uilist_t **uilist, joblist_t *joblist) {
 }
 
 int initWindows(uilist_t *uilist) {
+    pthread_mutex_init(&curses_lock, NULL);
+
     initscr();
     cbreak();
     
     for(int i = 0; i < uilist->num_jobs; i++) {
         uilist->jobuis[i].window = newwin(1, LINESIZE, i + 1, 0);
+        werase(uilist->jobuis[i].window);
         updateJobView(&(uilist->jobuis[i]));
     }
     
@@ -67,6 +70,7 @@ int updateJobView(jobui_t *jobui) {
     //    Length: 4 characters
     //    Description: Left-aligned, space-padded number with following '.'
     char index[5];
+    memset(index, 0, 5);
     sprintf(index, "%i.", jobui->index);
     if(jobui->index < 10)
         strcat(index, "  ");
@@ -78,6 +82,7 @@ int updateJobView(jobui_t *jobui) {
     //    Length: 32 characters
     //    Description: Left-aligned, space-padded string, truncated if needed
     char name[33];
+    memset(name, 0, 33);
     int namelen = strlen(jobui->name);
     strncpy(name, jobui->name, 32);
     for(int i = namelen; i < 32; i++)
@@ -88,6 +93,7 @@ int updateJobView(jobui_t *jobui) {
     //    Length: 12 characters
     //    Description: 10-character string inside brackets, right-padding outside end bracket
     char status[13];
+    memset(status, 0, 13);
     switch(jobui->state) {
         case UI_STATE_PENDING:
             sprintf(status, "[PENDING]   ");
@@ -122,6 +128,7 @@ int updateJobView(jobui_t *jobui) {
     //    Length: 52 characters
     //    Description: Two fixed brackets with 50 characters in between them, either '=' or ' '
     char statusbar[53];
+    memset(statusbar, 0, 53);
     int num_blocks = jobui->percent / 2;
     statusbar[0] = '[';
     for(int i = 1; i <= 50; i++) {
@@ -134,15 +141,19 @@ int updateJobView(jobui_t *jobui) {
     //    Length: 4 characters
     //    Description: Right-aligned percentage, space-padded
     char percentage[6];
+    memset(percentage, 0, 6);
     sprintf(percentage, "%i%%%%", jobui->percent);
     
     // Form the combined output string
     sprintf(output, "%s %s %s   %s %s", index, name, status, statusbar, percentage);
+    output[LINESIZE] = 0;
     
     // Print the string to the terminal
+    pthread_mutex_lock(&curses_lock);
     wmove(jobui->window, 0, 0);
     wprintw(jobui->window, output);
     wrefresh(jobui->window);
+    pthread_mutex_unlock(&curses_lock);
     
     return 0;
 }

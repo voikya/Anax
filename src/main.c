@@ -124,13 +124,14 @@ int main(int argc, char *argv[]) {
 	joblist_t *joblist = malloc(sizeof(joblist_t));
 	joblist->jobs = NULL;
 	joblist->num_jobs = 0;
+	int jindex = 0;
 	for(int i = optind; i < argc; i++) {
 		joblist->num_jobs++;
 		joblist->jobs = realloc(joblist->jobs, joblist->num_jobs * sizeof(anaxjob_t));
 		memset(&(joblist->jobs[i]), 0, sizeof(anaxjob_t));
 		joblist->jobs[joblist->num_jobs - 1].name = calloc(strlen(argv[i] + 1), sizeof(char));
 		strcpy(joblist->jobs[joblist->num_jobs - 1].name, argv[i]);
-		joblist->jobs[joblist->num_jobs - 1].index = i;
+		joblist->jobs[joblist->num_jobs - 1].index = jindex++;
 		joblist->jobs[joblist->num_jobs - 1].status = ANAX_STATE_PENDING;
 	}
 	if(joblist->num_jobs == 0 && !lflag) {
@@ -139,8 +140,8 @@ int main(int argc, char *argv[]) {
 		exit(ANAX_ERR_INVALID_INVOCATION);
 	}
 
-    uilist_t *uilist;	
-	if(!qflag) {
+    uilist_t *uilist = NULL;
+	if(!qflag && !lflag) {
 	    initUIList(&uilist, joblist);
 	    initWindows(uilist);
 	}
@@ -202,19 +203,16 @@ int main(int argc, char *argv[]) {
 	    pthread_mutex_init(&(tilelist->lock), NULL);
 	    
 	    // Send each remote node the colorscheme, scale, and remote node list
-	    err = initRemoteHosts(destinationlist, tilelist, colorscheme, scale, relief, projection);
+	    err = initRemoteHosts(destinationlist, tilelist, colorscheme, scale, relief, projection, uilist);
 	    
 	    // Send out initial jobs
 	    err = distributeJobs(destinationlist, joblist);
 	    
 		// Send out later jobs as remote nodes free up
 		while(tilelist->num_tiles < joblist->num_jobs) {
-		    printf("Waiting on lock... ");
-		    fflush(stdout);
     		pthread_mutex_lock(&ready_mutex);
 		    pthread_cond_wait(&ready_cond, &ready_mutex);
 		    pthread_mutex_unlock(&ready_mutex);
-		    printf("Got signal\n");
 		    
 		    err = distributeJobs(destinationlist, joblist);
 		}
@@ -223,9 +221,6 @@ int main(int argc, char *argv[]) {
 		for(int i = 0; i < destinationlist->num_destinations; i++) {
 		    pthread_join(destinationlist->destinations[i].thread, NULL);
 		}
-		
-		printf("All jobs have rendered.\n");
-		printf("%i tiles received\n", tilelist->num_tiles);
 		
 		pthread_mutex_destroy(&ready_mutex);
 		pthread_cond_destroy(&ready_cond);
@@ -239,6 +234,8 @@ int main(int argc, char *argv[]) {
 		
     } else if(lflag) {
         // Handle receipt of distributed rendering job
+        
+        qflag = 0;
         
         // Network setup
         int socketfd, outsocketfd;
@@ -290,6 +287,7 @@ int main(int argc, char *argv[]) {
             if(err == ANAX_ERR_NO_MAP)
                 break;
             anaxjob_t *current_job = &(localjobs->jobs[localjobs->num_jobs - 1]);
+            sendUIUpdate(outsocketfd, current_job, UI_STATE_PROCESSING);
             
             // Open the file
             TIFF *srctiff = XTIFFOpen(current_job->outfile, "r");
@@ -411,6 +409,8 @@ int main(int argc, char *argv[]) {
                 anaxjob_t *current_job = &(localjobs->jobs[i]);
                 printf("Sleeping: Status of job %i: %i\n", i, current_job->status);
                 if(current_job->status == ANAX_STATE_RENDERING) {
+                    sendUIUpdate(outsocketfd, current_job, UI_STATE_PREPARING);
+                
                     printf("Rendering map %i\n", i);
                     
                     // Load the map
@@ -441,6 +441,7 @@ int main(int argc, char *argv[]) {
                     colorize(map, colorscheme);
                     
                     // Render
+                    sendUIUpdate(outsocketfd, current_job, UI_STATE_RENDERING);
                     renderPNG(map, current_job->outfile, 0);
                 
                     // Update local and remote state
@@ -456,6 +457,7 @@ int main(int argc, char *argv[]) {
                     freeMap(map);
                     
                     // Transmit the rendered image home
+                    sendUIUpdate(outsocketfd, current_job, UI_STATE_SENDING);
                     returnPNG(outsocketfd, current_job);
                     
                 } else if(localjobs->jobs[i].status == ANAX_STATE_LOADED && 
