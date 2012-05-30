@@ -8,6 +8,10 @@
 #include "globals.h"
 #include "anaxcurses.h"
 
+int reqcount = 0;
+int reccount = 0;
+int gotreqcount = 0;
+
 /* DEBUGGING FUNCTIONS */
 
 void SHOW_DESTINATION_LIST(destinationlist_t *destinationlist) {
@@ -399,14 +403,6 @@ void *runRemoteNode(void *argt) {
         bytes_sent += send(destination->socketfd, hdr, sizeof(tiff_hdr_t) - bytes_sent, 0);
     }
     destination->status = ANAX_STATE_COMPLETE;
-    
-    // Update the UI
-    if(uilist) {
-        for(int i = 0; i < destination->num_jobs; i++) {
-            updateJobUIState(&(uilist->jobuis[destination->jobs[i]->index]), UI_STATE_REMOTECHK);
-            updateJobView(&(uilist->jobuis[destination->jobs[i]->index]));
-        }
-    }
     
     // Handle LOADED, COMPLETE, and NOJOB status updates from remote
     // Handle UI updates
@@ -1170,6 +1166,9 @@ int queryForMapFrame(anaxjob_t *current_job, destinationlist_t *remotenodes) {
 
 int requestMapFrame(anaxjob_t *current_job, destination_t *remote, int index, int request) {
     printf("Requesting frame\n");
+    
+    printf("** Sent: %i\n", ++reqcount);
+
 
     // Allocate a frame request header
     req_edge_hdr_t *hdr = malloc(sizeof(req_edge_hdr_t));
@@ -1177,15 +1176,17 @@ int requestMapFrame(anaxjob_t *current_job, destination_t *remote, int index, in
     // Pack the header
     hdr->packet_size = (uint32_t)sizeof(req_edge_hdr_t);
     hdr->type = HDR_REQ_EDGE;
-    hdr->part = (uint8)request;
+    hdr->part = (uint8_t)request;
     hdr->requesting_job_id = (uint16_t)(current_job->index);
     hdr->requested_job_id = (uint16_t)(remote->jobs[index]->index);
     
     // Send the request
+    pthread_mutex_lock(&(remote->ready_mutex));
     int bytes_sent = 0;
     while(bytes_sent < sizeof(req_edge_hdr_t)) {
-        bytes_sent += send(remote->socketfd, hdr + bytes_sent, sizeof(req_edge_hdr_t) - bytes_sent, 0);
+        bytes_sent += send(remote->socketfd, (uint8_t *)hdr + bytes_sent, sizeof(req_edge_hdr_t) - bytes_sent, 0);
     }
+    pthread_mutex_unlock(&(remote->ready_mutex));
     
     free(hdr);
     
@@ -1253,7 +1254,7 @@ void *handleSharing(void *argt) {
         while(bytes_rcvd < sizeof(uint32_t)) {
             bytes_rcvd += recv(socket, &packet_size, sizeof(uint32_t), 0);
         }
-        
+                
         // Allocate a buffer
         uint8_t *buf = calloc(packet_size, sizeof(uint8_t));
         
@@ -1291,7 +1292,7 @@ void *handleSharing(void *argt) {
             {
                 req_edge_hdr_t *hdr = (req_edge_hdr_t *)buf;
                 
-                printf("Got req\n");
+                printf("*** Got Req: %i\n", ++gotreqcount);
                 
                 // Load requested map from memory
                 geotiffmap_t *map;
@@ -1423,6 +1424,20 @@ void *handleSharing(void *argt) {
                         break;
                 }
 
+                mapframe_threadarg_t *argt = malloc(sizeof(mapframe_threadarg_t));
+                argt->socket = remotenodes->destinations[sender].socketfd;
+                argt->numbytes = nrows * ncols * sizeof(int16_t);
+                argt->lock = &lock;
+                argt->lock2 = &(remotenodes->destinations[sender].ready_mutex);
+                argt->hdr = outhdr;
+                argt->buf = databuf;
+                pthread_t framethread;
+                pthread_create(&framethread, NULL, sendMapFrame, argt);
+                
+                freeMap(map);
+                break;
+
+/*
                 // Send the response
                 pthread_mutex_lock(&lock);
                 int bytes_sent = 0;
@@ -1441,6 +1456,7 @@ void *handleSharing(void *argt) {
 
                 freeMap(map);
                 break;
+*/
             }
             case HDR_SEND_EDGE:
             {
@@ -1459,7 +1475,7 @@ void *handleSharing(void *argt) {
                 uint16_t *databuf = calloc(hdr->datasize, sizeof(uint16_t));
                 bytes_rcvd = 0;
                 while(bytes_rcvd < hdr->datasize * 2) {
-                    bytes_rcvd += recv(socket, databuf, (hdr->datasize * 2) - bytes_rcvd, 0);
+                    bytes_rcvd += recv(socket, (uint8_t *)databuf + bytes_rcvd, (hdr->datasize * 2) - bytes_rcvd, 0);
                 }
                 
                 // Load the map
@@ -1575,6 +1591,8 @@ void *handleSharing(void *argt) {
                         break;
                 }
                 
+                printf("** Received: %i\n", ++reccount);
+                
                 // Write the map
                 writeMapData(current_job, map);
                 //pthread_mutex_unlock(&(current_job->file_mutex));
@@ -1614,15 +1632,26 @@ void *sendMapFrame(void *argt) {
     int socket = ((mapframe_threadarg_t *)argt)->socket;
     int numbytes = ((mapframe_threadarg_t *)argt)->numbytes;
     pthread_mutex_t *lock = ((mapframe_threadarg_t *)argt)->lock;
+    pthread_mutex_t *lock2 = ((mapframe_threadarg_t *)argt)->lock2;
+    send_edge_hdr_t *outhdr = ((mapframe_threadarg_t *)argt)->hdr;
     int16_t *buf = ((mapframe_threadarg_t *)argt)->buf;
-    
-    //pthread_mutex_lock(lock);
+
+    // Send the response
+    // TODO: Unify lock and lock2 (one for sharing thread, one to prevent crossover with requestMapFrame)
+    pthread_mutex_lock(lock);
+    pthread_mutex_lock(lock2);
     int bytes_sent = 0;
+    while(bytes_sent < sizeof(send_edge_hdr_t)) {
+        bytes_sent += send(socket, (uint8_t *)outhdr + bytes_sent, sizeof(send_edge_hdr_t) - bytes_sent, 0);
+    }
+
+    bytes_sent = 0;
     while(bytes_sent < numbytes) {
-        bytes_sent += send(socket, buf, numbytes - bytes_sent, 0);
+        bytes_sent += send(socket, (uint8_t *)buf + bytes_sent, numbytes - bytes_sent, 0);
         printf("Sent %i out of %i bytes\n", bytes_sent, numbytes);
     }
     pthread_mutex_unlock(lock);
+    pthread_mutex_unlock(lock2);
     
     printf("Sent %i bytes to socket %i\n", numbytes, socket);
     

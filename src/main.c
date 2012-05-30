@@ -350,6 +350,7 @@ int main(int argc, char *argv[]) {
         for(int i = 0; i < localjobs->num_jobs; i++) {
             printf("... Examining job %i of %i\n", i + 1, localjobs->num_jobs);
             queryForMapFrameLocal(&(localjobs->jobs[i]), localjobs);
+            sendUIUpdate(outsocketfd, &(localjobs->jobs[i]), UI_STATE_REMOTECHK);
         }
         
         // Query other nodes for frame information
@@ -407,7 +408,7 @@ int main(int argc, char *argv[]) {
         while(rendered < localjobs->num_jobs) {
             for(int i = 0; i < localjobs->num_jobs; i++) {
                 anaxjob_t *current_job = &(localjobs->jobs[i]);
-                printf("Sleeping: Status of job %i: %i\n", i, current_job->status);
+                printf("Sleeping: Status of job %i: %i [%i %i %i %i %i %i %i %i]\n", i, current_job->status, current_job->frame_coordinates.N_set, current_job->frame_coordinates.S_set, current_job->frame_coordinates.E_set, current_job->frame_coordinates.W_set, current_job->frame_coordinates.NE_set, current_job->frame_coordinates.SE_set, current_job->frame_coordinates.NW_set, current_job->frame_coordinates.SW_set);
                 if(current_job->status == ANAX_STATE_RENDERING) {
                     sendUIUpdate(outsocketfd, current_job, UI_STATE_PREPARING);
                 

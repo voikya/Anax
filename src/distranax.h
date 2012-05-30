@@ -188,6 +188,8 @@ struct mapframe_thread_arguments {
     int socket;
     int numbytes;
     pthread_mutex_t *lock;
+    pthread_mutex_t *lock2;
+    send_edge_hdr_t *hdr;
     int16_t *buf;
 };
 typedef struct mapframe_thread_arguments mapframe_threadarg_t;
