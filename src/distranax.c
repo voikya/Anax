@@ -804,7 +804,7 @@ int sendStatusUpdate(int outsocket, destinationlist_t *remotenodes, anaxjob_t *c
         pthread_mutex_lock(&send_lock);
         int bytes_sent = 0;
         while(bytes_sent < sizeof(status_change_hdr_t)) {
-            bytes_sent += send(outsocket, hdr, sizeof(status_change_hdr_t) - bytes_sent, 0);
+            bytes_sent += send(outsocket, (uint8_t *)hdr + bytes_sent, sizeof(status_change_hdr_t) - bytes_sent, 0);
         }
         pthread_mutex_unlock(&send_lock);
     }
@@ -826,7 +826,7 @@ int sendUIUpdate(int outsocket, anaxjob_t *current_job, uint8_t status) {
     pthread_mutex_lock(&send_lock);
     int bytes_sent = 0;
     while(bytes_sent < sizeof(ui_hdr_t)) {
-        bytes_sent += send(outsocket, hdr, sizeof(ui_hdr_t) - bytes_sent, 0);
+        bytes_sent += send(outsocket, (uint8_t *)hdr + bytes_sent, sizeof(ui_hdr_t) - bytes_sent, 0);
     }
     pthread_mutex_unlock(&send_lock);
     
@@ -1617,7 +1617,7 @@ void *handleSharing(void *argt) {
             {
                 min_max_hdr_t *hdr = (min_max_hdr_t *)buf;
                 *global_max = (*global_max > hdr->max) ? *global_max : hdr->max;
-                *global_min = (*global_min > hdr->min) ? *global_min : hdr->min;
+                *global_min = (*global_min < hdr->min) ? *global_min : hdr->min;
                 break;
             }
             default:
@@ -1640,6 +1640,7 @@ void *sendMapFrame(void *argt) {
     // TODO: Unify lock and lock2 (one for sharing thread, one to prevent crossover with requestMapFrame)
     pthread_mutex_lock(lock);
     pthread_mutex_lock(lock2);
+    pthread_mutex_lock(&send_lock);
     int bytes_sent = 0;
     while(bytes_sent < sizeof(send_edge_hdr_t)) {
         bytes_sent += send(socket, (uint8_t *)outhdr + bytes_sent, sizeof(send_edge_hdr_t) - bytes_sent, 0);
@@ -1652,6 +1653,7 @@ void *sendMapFrame(void *argt) {
     }
     pthread_mutex_unlock(lock);
     pthread_mutex_unlock(lock2);
+    pthread_mutex_unlock(&send_lock);
     
     printf("Sent %i bytes to socket %i\n", numbytes, socket);
     

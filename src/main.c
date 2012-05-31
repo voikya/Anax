@@ -131,6 +131,8 @@ int main(int argc, char *argv[]) {
 		memset(&(joblist->jobs[i]), 0, sizeof(anaxjob_t));
 		joblist->jobs[joblist->num_jobs - 1].name = calloc(strlen(argv[i] + 1), sizeof(char));
 		strcpy(joblist->jobs[joblist->num_jobs - 1].name, argv[i]);
+		joblist->jobs[joblist->num_jobs - 1].tmpfile = NULL;
+		joblist->jobs[joblist->num_jobs - 1].outfile = NULL;
 		joblist->jobs[joblist->num_jobs - 1].index = jindex++;
 		joblist->jobs[joblist->num_jobs - 1].status = ANAX_STATE_PENDING;
 	}
@@ -397,7 +399,9 @@ int main(int argc, char *argv[]) {
         
         // If the colorscheme is relative, update it with the appropriate scale
         if(colorscheme->isAbsolute == ANAX_RELATIVE_COLORS) {
+            printf(">>> Local Max: %i / Global Max: %i / New Global Max: %i", local_max, global_max, (local_max > global_max) ? local_max : global_max);
             global_max = (local_max > global_max) ? local_max : global_max;
+            printf(">>> Local Min: %i / Global Min: %i / New Global Min: %i", local_min, global_min, (local_min < global_min) ? local_min : global_min);
             global_min = (local_min < global_min) ? local_min : global_min;
             setRelativeElevations(colorscheme, global_max, global_min);
         }
