@@ -675,9 +675,13 @@ int writeMapData(anaxjob_t *current_job, geotiffmap_t *map) {
     hdr[1] = (uint32_t)(map->width);
     hdr[2] = map->max_elevation;
     hdr[3] = map->min_elevation;
-    fwrite(hdr, sizeof(uint32_t), 4, fp);
-    fwrite(&(map->vertical_pixel_scale), sizeof(double), 1, fp);
-    fwrite(&(map->horizontal_pixel_scale), sizeof(double), 1, fp);
+    int count = 0;
+    while(count < 4)
+        count += fwrite(hdr, sizeof(uint32_t), 4 - count, fp);
+    while(count < 5)
+        count += fwrite(&(map->vertical_pixel_scale), sizeof(double), 1, fp);
+    while(count < 6)
+        count += fwrite(&(map->horizontal_pixel_scale), sizeof(double), 1, fp);
 
     int bufsize = map->width + (2 * MAPFRAME);
     int16_t buf[bufsize];
@@ -765,7 +769,7 @@ int finalizeLocalJobs(joblist_t *joblist) {
     return 0;
 }
 
-int stitch(tilelist_t *tilelist, char *outfile, int suppress_output) {
+int stitch(tilelist_t *tilelist, char *outfile, uilist_t *uilist) {
     // Open outfile
 	FILE *out = fopen(outfile, "w");
 	png_structp png_ptr = NULL;
@@ -910,7 +914,19 @@ int stitch(tilelist_t *tilelist, char *outfile, int suppress_output) {
             loadRowData(row_pointer, tile_subset, img_width);
             png_write_row(png_ptr, row_pointer);
             y++;
+            
+            if(uilist) {
+                if((int)percent_interval > 0) {
+                    if(y % (int)percent_interval == 0) {
+                        updateFinalUIState(&(uilist->final), (int)(y / percent_interval) + 1);
+                    }
+                } else {
+                    updateFinalUIState(&(uilist->final), (y * 100) / img_height);
+                }
+                updateFinalView(&(uilist->final));
+            }
         
+        /*
             if(!suppress_output) {
                 if((int)percent_interval > 0) {
                     if(y % (int)percent_interval == 0) {
@@ -920,6 +936,7 @@ int stitch(tilelist_t *tilelist, char *outfile, int suppress_output) {
                     printf("%i%%\n", (y * 100) / img_height);
                 }
             }
+        */
         }
         
         // Clean up the tile subset

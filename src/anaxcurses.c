@@ -8,6 +8,8 @@ Layout:
     1c                               1c            3c                                                   1c
 1.   ASTGTM2_N00_E00.tif              [PENDING]      [==================================================] 0%
 
+Final: XXXXXXXXXXX
+
 
 Stages:
 PENDING
@@ -22,7 +24,7 @@ COMPLETE
 
 */
 
-int initUIList(uilist_t **uilist, joblist_t *joblist) {
+int initUIList(uilist_t **uilist, joblist_t *joblist, char *outfile) {
     *uilist = malloc(sizeof(uilist_t));
     (*uilist)->num_jobs = joblist->num_jobs;
     (*uilist)->jobuis = calloc(joblist->num_jobs, sizeof(jobui_t));
@@ -39,6 +41,13 @@ int initUIList(uilist_t **uilist, joblist_t *joblist) {
         (*uilist)->jobuis[i].job = &(joblist->jobs[i]);
     }
     
+    (*uilist)->final.name = calloc(33, sizeof(char));
+    char *name_ptr = strrchr(outfile, '/');
+    if(!name_ptr)
+        name_ptr = outfile;
+    strncpy((*uilist)->final.name, name_ptr, 32);
+    (*uilist)->final.percent = 0;
+    
     return 0;
 }
 
@@ -53,6 +62,10 @@ int initWindows(uilist_t *uilist) {
         werase(uilist->jobuis[i].window);
         updateJobView(&(uilist->jobuis[i]));
     }
+    
+    uilist->final.window = newwin(1, LINESIZE, uilist->num_jobs + 2, 0);
+    werase(uilist->final.window);
+    updateFinalView(&(uilist->final));
     
     return 0;
 }
@@ -158,6 +171,50 @@ int updateJobView(jobui_t *jobui) {
     return 0;
 }
 
+int updateFinalView(finaljobui_t *final) {
+    // Set up a string to hold the fully-formatted output
+    char output[LINESIZE];
+    memset(output, 0, LINESIZE);
+    
+    // Format the image name
+    char name[40];
+    memset(name, 0, 40);
+    int namelen = strlen(final->name);
+    sprintf(name, "Final: %s", final->name);
+    for(int i = namelen + 7; i < 39; i++)
+        name[i] = ' ';
+    name[39] = 0;
+
+    // Format the status bar
+    char statusbar[53];
+    memset(statusbar, 0, 53);
+    int num_blocks = final->percent / 2;
+    statusbar[0] = '[';
+    for(int i = 1; i <= 50; i++) {
+        statusbar[i] = (i <= num_blocks) ? '=' : ' ';
+    }
+    statusbar[51] = ']';
+    statusbar[52] = 0;
+    
+    // Format the percent complete indicator
+    char percentage[6];
+    memset(percentage, 0, 6);
+    sprintf(percentage, "%i%%%%", final->percent);
+    
+    // Form the combined output string
+    sprintf(output, "%s              %s %s", name, statusbar, percentage);
+    output[LINESIZE] = 0;
+    
+    // Print the string to the terminal
+    pthread_mutex_lock(&curses_lock);
+    wmove(final->window, 0, 0);
+    wprintw(final->window, output);
+    wrefresh(final->window);
+    pthread_mutex_unlock(&curses_lock);
+
+    return 0;
+}
+
 int updateJobUIState(jobui_t *jobui, int state) {
     jobui->state = state;
     switch(state) {
@@ -189,5 +246,11 @@ int updateJobUIState(jobui_t *jobui, int state) {
             break;
     }
 
+    return 0;
+}
+
+int updateFinalUIState(finaljobui_t *final, int percentage) {
+    final->percent = percentage;
+    
     return 0;
 }

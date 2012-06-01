@@ -144,7 +144,7 @@ int main(int argc, char *argv[]) {
 
     uilist_t *uilist = NULL;
 	if(!qflag && !lflag) {
-	    initUIList(&uilist, joblist);
+	    initUIList(&uilist, joblist, outfile);
 	    initWindows(uilist);
 	}
 
@@ -232,7 +232,7 @@ int main(int argc, char *argv[]) {
 		finalizeLocalJobs(joblist);
 		
         // Stitch together the received images
-        stitch(tilelist, outfile, qflag);
+        stitch(tilelist, outfile, uilist);
 		
     } else if(lflag) {
         // Handle receipt of distributed rendering job
@@ -659,7 +659,7 @@ int main(int argc, char *argv[]) {
         finalizeLocalJobs(joblist);
         
         // Stitch together the tiles
-        stitch(tilelist, outfile, qflag);
+        stitch(tilelist, outfile, uilist);
 	}
 	
 	if(!qflag) {

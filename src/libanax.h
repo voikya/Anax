@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <tiffio.h>
 #include "globals.h"
+#include "anaxcurses.h"
 
 struct color {
 	int r;
@@ -117,7 +118,7 @@ int writeMapData(anaxjob_t *current_job, geotiffmap_t *map);
 int readMapData(anaxjob_t *current_job, geotiffmap_t **map);
 void freeMap(geotiffmap_t *map);
 int finalizeLocalJobs(joblist_t *joblist);
-int stitch(tilelist_t *tilelist, char *outfile, int suppress_output);
+int stitch(tilelist_t *tilelist, char *outfile, uilist_t *uilist);
 int getTileRowSubset(tilelist_t *tilelist, int row, int img_width, tile_subset_t **tile_subset);
 int loadRowData(png_byte *row_ptr, tile_subset_t *tile_subset, int img_width);
 
