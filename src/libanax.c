@@ -719,12 +719,16 @@ int readMapData(anaxjob_t *current_job, geotiffmap_t **map) {
 
     // Allocate map data array
 	(*map)->data = malloc(((*map)->height + (2 * MAPFRAME)) * sizeof(point_t *));
-	if((*map)->data == NULL)
-	    return ANAX_ERR_NO_MEMORY;
+	if((*map)->data == NULL) {
+	    printf("Height: %i\n", (*map)->height + (2 * MAPFRAME));
+	    return ANAX_ERR_NO_MEMORY;    
+	}
 	for(int i = 0; i < (*map)->height + (2 * MAPFRAME); i++) {
 		(*map)->data[i] = malloc(((*map)->width + (2 * MAPFRAME)) * sizeof(point_t));
-		if((*map)->data[i] == NULL)
+		if((*map)->data[i] == NULL) {
+		    printf("Width: %i\n", (*map)->width + (2 * MAPFRAME));
 			return ANAX_ERR_NO_MEMORY;
+		}
 	}
 	
 	// Read map data from the file and store it

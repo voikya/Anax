@@ -1485,8 +1485,11 @@ void *handleSharing(void *argt) {
                     if(localjobs->jobs[i].index == hdr->requesting_job_id)
                         current_job = &(localjobs->jobs[i]);
                 }
-                //pthread_mutex_lock(&(current_job->file_mutex));
-                readMapData(current_job, &map);
+                pthread_mutex_lock(&(current_job->file_mutex));
+                while(readMapData(current_job, &map) == ANAX_ERR_NO_MEMORY) {
+                    printf("Memory allocation failure\n");
+                    free(map);
+                }
                 
                 printf("Data received\n");
                 
@@ -1595,7 +1598,7 @@ void *handleSharing(void *argt) {
                 
                 // Write the map
                 writeMapData(current_job, map);
-                //pthread_mutex_unlock(&(current_job->file_mutex));
+                pthread_mutex_unlock(&(current_job->file_mutex));
                 
                 // Free the map
                 freeMap(map);
