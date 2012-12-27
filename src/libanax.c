@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <xtiffio.h>
+#include <zlib.h>
 #include "globals.h"
 #include "libanax.h"
 #include "projections.h"
